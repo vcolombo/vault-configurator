@@ -6,6 +6,7 @@ import os
 import re
 import time
 
+import h2d_split
 import mesh
 
 # Default printers are filled in after PRINTER_CATALOG (U1, P1S, H2D left, H2D right).
@@ -31,6 +32,13 @@ for model, y, left, right in (("Bambu Lab H2C", 320, (325, 320), (305, 325, 25))
     PRINTER_CATALOG += [{"name": f"{model} · left nozzle", "profile": model, "bed": [left[0], y], "z": left[1], "slicer": "bambu", "nozzleSide": "left"},
                         {"name": f"{model} · right nozzle", "profile": model, "bed": [right[0], y], "z": right[1], "slicer": "bambu",
                          "nozzleSide": "right", "origin": [right[2], 0]}]
+# Opt-in. Not a default row: a 350 mm part is cut into one object with two nozzle parts.
+# It does not replace the left-only and right-only rows.
+PRINTER_CATALOG.append({
+    "name": "Bambu Lab H2D · both nozzles (split)",
+    "profile": "Bambu Lab H2D",
+    "bed": [350, 320], "z": 320, "slicer": "bambu", "nozzleMode": "h2d-split",
+})
 PRINTER_CATALOG.sort(key=lambda p: p["name"])
 
 
@@ -99,7 +107,13 @@ def diagonal_fit(a, b, x, y):
 def fits(size, printer, edge=0):
     """Placement angle (0, 90 or a diagonal) or None. Same rule as the ussadesign 'Printers' tab:
     the part's footprint may be rotated freely on the bed; height must clear the printer's Z and the
-    user's 'max part height' (e.g. keep tall parts off a bed-slinger)."""
+    user's 'max part height' (e.g. keep tall parts off a bed-slinger).
+
+    The H2D combined row is not a larger single-nozzle bed. It only accepts an axis-aligned pose
+    on the 350 mm plate, and a later step cuts parts that enter both exclusive strips.
+    """
+    if printer.get("nozzleMode") == "h2d-split":
+        return h2d_split.fit_angle(size, edge)
     w, d, h = size
     if h > min(printer["z"], printer.get("maxH") or printer["z"]):
         return None
@@ -351,6 +365,14 @@ def plan(parts, settings, stats_fn):
     plates = []
     for p in printers:
         mine = [it for it in items if it["printer"] == p["id"]]
+        split_mine = []
+        pack_bed = p["bed"]
+        if p.get("nozzleMode") == "h2d-split":
+            # Single-nozzle parts stay inside the left nozzle's 325 mm reach.
+            # Wider parts are cut later and are not packed into that rectangle.
+            split_mine = [it for it in mine if max(it["w"], it["d"]) > h2d_split.LEFT_MAX + 1e-6]
+            mine = [it for it in mine if max(it["w"], it["d"]) <= h2d_split.LEFT_MAX + 1e-6]
+            pack_bed = [h2d_split.LEFT_MAX, p["bed"][1]]
 
         def keyf(it):
             if s["groupBy"] == "size":
@@ -367,16 +389,16 @@ def plan(parts, settings, stats_fn):
                     diag.setdefault((round(it["diag"], 1), it["w"], it["d"]), []).append(it)
             packers = []
             for g_items in diag.values():
-                for row in diagonal_rows(g_items, p["bed"], gap, edge):
-                    pk = Shelf(p["bed"], max(edge, SAFE_EDGE), gap)
+                for row in diagonal_rows(g_items, pack_bed, gap, edge):
+                    pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
                     pk.items, pk.diagonal = row, True
-                    pk.free = corner_rects(row[0], p["bed"], gap, pk.edge) if len(row) == 1 else []  # the corners stay usable
+                    pk.free = corner_rects(row[0], pack_bed, gap, pk.edge) if len(row) == 1 else []  # the corners stay usable
                     packers.append(pk)
             for it in bucket:
                 if it["diag"] is not None:
                     continue
                 if not any(pk.place(it) for pk in packers):
-                    pk = Shelf(p["bed"], max(edge, SAFE_EDGE), gap)
+                    pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
                     if not pk.place(it):  # as big as the bed itself: fits() allowed it with the user's keep-out, so centre it
                         pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
                     packers.append(pk)
@@ -384,6 +406,15 @@ def plan(parts, settings, stats_fn):
                 plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": expand(pk.items), "fill": round(pk.fill(), 2),
                                "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
                                **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
+        for it in split_mine:
+            # Flush to the left edge of the 350 mm plate, long side along X, one part per plate.
+            if it["w"] >= it["d"]:
+                placed = {**it, "x": 0.0, "y": 0.0, "rot": 0, "fw": it["w"], "fd": it["d"]}
+            else:
+                placed = {**it, "x": float(it["d"]), "y": 0.0, "rot": 90, "fw": it["d"], "fd": it["w"]}
+            plates.append({"printer": p["id"], "group": it.get("group") or "", "slots": [it["slot"]], "items": [placed],
+                           "fill": round(max(it["w"], it["d"]) * min(it["w"], it["d"]) / (h2d_split.PLATE_X * h2d_split.PLATE_Y), 2),
+                           "bed": [h2d_split.PLATE_X, h2d_split.PLATE_Y], "origin": [0, 0], "h2dSplit": True})
     for n, pl in enumerate(plates):
         pl["name"] = plate_name(n + 1, pl, s)
         pl["grams"] = round(sum(i["grams"] for i in pl["items"]), 1)
@@ -393,6 +424,10 @@ def plan(parts, settings, stats_fn):
     placed = sum(len(pl["items"]) for pl in plates)
     result = {"plates": plates, "unplaceable": unplaceable, "load": load, "pieces": pieces, "placed": placed,
               "missing": pieces - placed}  # placed + unplaceable quantities must add up to the BOM; anything else is a bug
+    for pl in plates:
+        owner = next(pr for pr in printers if pr["id"] == pl["printer"])
+        if owner.get("nozzleMode") == "h2d-split":
+            h2d_split.annotate_plate(pl)
     result["fingerprint"] = plate_fingerprint(plates)
     return result
 
@@ -446,17 +481,37 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         t = time.time()
         allp = presets_mod.load_all(p["slicer"]) if p.get("slicer") in presets_mod.SLICERS else {}
         objects, index, plates = [], {}, []
+        warn_parts = []
         ox, oy = p.get("origin") or (0, 0)  # where this nozzle's reach starts on the plate
         full_bed = (p["bed"][0] + ox, p["bed"][1] + oy)
         for pl in mine:
             items = []
             for it in pl["items"]:
                 preset = preset_for(s, p, it)
-                key = (it["file"], it["role"], preset)
+                cfg = presets_mod.overrides(p.get("slicer", ""), preset, p.get("preset", ""), allp) if allp else {}
+                if it.get("nozzle") == "unsplittable":
+                    warn_parts.append(it["part"])
+                    continue
+                if it.get("nozzle") == "split":
+                    progress(100 * done / total, f"{p['name']}: cutting {it['part']} for the two nozzles")
+                    raw = mesh.load_aligned(root, it["file"], stats_fn(it["file"]))
+                    halves = h2d_split.split_placed(raw, it["x"], it["y"], it["rot"], it["splitX"])
+                    if not halves:
+                        warn_parts.append(it["part"])
+                        continue
+                    left, right = halves
+                    objects.append({"name": it["part"] + " (cut to parts)", "config": cfg, "parts": [
+                        {"name": it["part"] + " · left nozzle", "mesh": left, "extruder": 1},
+                        {"name": it["part"] + " · right nozzle", "mesh": right, "extruder": 2},
+                    ]})
+                    # Placement is already in the vertex coordinates. The plate grid offset is still applied.
+                    items.append((len(objects) - 1, ox, oy, 0))
+                    done += 1
+                    continue
+                key = (it["file"], it["role"], preset, it.get("nozzle") or "")
                 if key not in index:
                     progress(100 * done / total, f"{p['name']}: reading {it['part']} ({done + 1}/{total})")
                     index[key] = len(objects)
-                    cfg = presets_mod.overrides(p.get("slicer", ""), preset, p.get("preset", ""), allp) if allp else {}
                     objects.append({"name": it["part"] + (f" ({preset})" if preset and preset != p.get("preset") else ""),
                                     "mesh": mesh.load_aligned(root, it["file"], stats_fn(it["file"])),
                                     "extruder": int(s["roles"].get(it["role"], 0)) + 1, "config": cfg})
@@ -466,9 +521,23 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         pname = re.sub(r"[^A-Za-z0-9]+", "-", p["name"]).strip("-")
         path = os.path.join(out_dir, f"{stack_name}{suffix}_{pname}.3mf")
         progress(100 * done / total, f"{p['name']}: writing {os.path.basename(path)} ({len(plates)} plates)")
-        project, fil_names = project_for(s, p)
-        warn = project.pop("_error", None) if project else "no slicer preset chosen for this printer; opened file keeps the slicer's current presets"
-        mesh.write_3mf(path, objects, plates, full_bed, f"{stack_name}{suffix} · {p['name']}", project if project else None)
+        split_file = any(obj.get("parts") for obj in objects)
+        project, fil_names = (None, []) if split_file else project_for(s, p)
+        warn = None
+        if split_file:
+            # A normal project config pins every filament to one nozzle. That would undo the cut.
+            warn = h2d_split.MANUAL_STEPS
+        elif project:
+            warn = project.pop("_error", None)
+        else:
+            warn = "no slicer preset chosen for this printer; opened file keeps the slicer's current presets"
+        if warn_parts:
+            warn = (warn + " " if warn else "") + "Not exported, the cut could not be closed or the part is over 350 mm: " + ", ".join(warn_parts)
+        if not objects:
+            written.append({"file": path, "printer": p["name"], "plates": 0, "items": 0, "overrides": 0, "filaments": [],
+                            "warning": warn, "outside": [], "seconds": round(time.time() - t, 1), "experimental": split_file, "ready": False})
+            continue
+        mesh.write_3mf(path, objects, plates, full_bed, f"{stack_name}{suffix} · {p['name']}", None if split_file else (project if project else None))
         progress(100 * done / total, f"{p['name']}: checking every piece is on its plate")
         outside = mesh.verify_3mf(path, full_bed, reach=(ox, oy, *p["bed"]))  # read back the way the slicer will
         if outside:
@@ -478,7 +547,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
             pl["file"] = os.path.basename(path)
         written.append({"file": path, "printer": p["name"], "plates": len(plates), "items": sum(len(pl["items"]) for pl in plates),
                         "overrides": sum(1 for o in objects if o["config"]), "filaments": fil_names, "warning": warn, "outside": outside,
-                        "seconds": round(time.time() - t, 1)})
+                        "seconds": round(time.time() - t, 1), "experimental": split_file, "ready": not split_file and not outside and not warn_parts})
         log(f"wrote {path} ({len(plates)} plates, {time.time() - t:.1f}s)")
     progress(100, "done")
     return written

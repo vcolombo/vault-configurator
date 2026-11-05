@@ -302,13 +302,25 @@ def write_3mf(path, objects, plates, bed, title="", project=None):
     build, settings, assemble, files, rels, plate_cfg = [], [], [], {}, [], []
     # each mesh is stored once (3D/Objects/object_N.model); every printed piece is its own top-level object that
     # references it through a component, so the slicer lists "L3 Box 1F" per piece instead of "Instance 2"
+    def part_list(obj):
+        # "parts" is Bambu's cut-to-parts: one object, several meshes and nozzles.
+        # A bare mesh stays one part, which is what every existing export writes.
+        if obj.get("parts"):
+            return obj["parts"]
+        return [{"name": obj["name"], "mesh": obj["mesh"], "extruder": obj.get("extruder", 1)}]
+
     mesh_id_of = {}
+    next_mesh = 1
     for k, obj in enumerate(objects):
-        mesh_id = k + 1
-        mesh_id_of[k] = mesh_id
-        sub = f"3D/Objects/object_{mesh_id}.model"
-        files[sub] = f'{head}<metadata name="BambuStudio:3mfVersion">1</metadata>\n<resources>\n<object id="{mesh_id}" p:UUID="{_uuid(mesh_id)}" type="model">{_mesh_xml(obj["mesh"])}</object>\n</resources>\n<build/>\n</model>\n'
-        rels.append(f'<Relationship Target="/{sub}" Id="rel-{mesh_id}" Type="{REL_MODEL}"/>')
+        stored = []
+        for part in part_list(obj):
+            mesh_id = next_mesh
+            next_mesh += 1
+            stored.append((mesh_id, part))
+            sub = f"3D/Objects/object_{mesh_id}.model"
+            files[sub] = f'{head}<metadata name="BambuStudio:3mfVersion">1</metadata>\n<resources>\n<object id="{mesh_id}" p:UUID="{_uuid(mesh_id)}" type="model">{_mesh_xml(part["mesh"])}</object>\n</resources>\n<build/>\n</model>\n'
+            rels.append(f'<Relationship Target="/{sub}" Id="rel-{mesh_id}" Type="{REL_MODEL}"/>')
+        mesh_id_of[k] = stored
     oid = len(objects)
     grid = printable_size(project, bed)
     for pi, plate in enumerate(plates):
@@ -318,15 +330,21 @@ def write_3mf(path, objects, plates, bed, title="", project=None):
                          f'<metadata key="bed_type" value="{escape(bed_type)}"/>\n')
         for (k, x, y, rot) in plate["items"]:
             oid += 1
-            obj, mesh_id = objects[k], mesh_id_of[k]
-            name, ext = escape(obj["name"]), int(obj.get("extruder", 1))
-            model.append(f'<object id="{oid}" p:UUID="{_uuid(oid)}" type="model">\n<components>\n'
-                         f'<component p:path="/3D/Objects/object_{mesh_id}.model" objectid="{mesh_id}" p:UUID="{_uuid(100000 + oid)}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n</components>\n</object>\n')
+            obj, stored = objects[k], mesh_id_of[k]
+            name = escape(obj["name"])
+            components = []
+            part_xml = []
             cfg_meta = "".join(f'<metadata key="{escape(kk)}" value="{escape(str(v))}"/>\n' for kk, v in (obj.get("config") or {}).items())
-            settings.append(f'<object id="{oid}">\n<metadata key="name" value="{name}"/>\n<metadata key="extruder" value="{ext}"/>\n{cfg_meta}'
-                            f'<part id="{mesh_id}" subtype="normal_part">\n<metadata key="name" value="{name}"/>\n<metadata key="extruder" value="{ext}"/>\n'
-                            f'<metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
-                            f'<mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n</part>\n</object>\n')
+            for mesh_id, part in stored:
+                pname, ext = escape(part["name"]), int(part.get("extruder", 1))
+                components.append(f'<component p:path="/3D/Objects/object_{mesh_id}.model" objectid="{mesh_id}" p:UUID="{_uuid(100000 + oid + mesh_id)}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n')
+                part_xml.append(f'<part id="{mesh_id}" subtype="normal_part">\n<metadata key="name" value="{pname}"/>\n<metadata key="extruder" value="{ext}"/>\n'
+                                f'<metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n'
+                                f'<mesh_stat edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n</part>\n')
+            first_ext = int(stored[0][1].get("extruder", 1))
+            model.append(f'<object id="{oid}" p:UUID="{_uuid(oid)}" type="model">\n<components>\n' + "".join(components) + '</components>\n</object>\n')
+            settings.append(f'<object id="{oid}">\n<metadata key="name" value="{name}"/>\n<metadata key="extruder" value="{first_ext}"/>\n{cfg_meta}'
+                            + "".join(part_xml) + '</object>\n')
             a = math.radians(rot)
             c, s = math.cos(a), math.sin(a)
             tf = f"{c:.6f} {s:.6f} 0 {-s:.6f} {c:.6f} 0 0 0 1 {ox + x:.3f} {oy + y:.3f} 0"  # rotate about Z, then translate
