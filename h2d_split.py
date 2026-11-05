@@ -32,21 +32,35 @@ MANUAL_STEPS = (
 )
 
 
+def _axis_options(size):
+    width, depth, _height = size
+    return ((0.0, width, depth), (90.0, depth, width))
+
+
+def single_nozzle_angle(size, edge, bed, left_width):
+    """0 or 90 if the part fits one nozzle axis-aligned, including the edge inset, else None."""
+    bed_y = bed[1] - 2 * edge
+    nozzle_x = left_width - 2 * edge
+    for rot, along, across in _axis_options(size):
+        if along <= nozzle_x + EPS and across <= bed_y + EPS:
+            return rot
+    return None
+
+
 def fit_angle(size, edge, bed, left_width):
     """0 or 90 if the part can sit axis-aligned on the combined bed, else None.
 
-    Height is the caller's check. A diagonal-only fit on one nozzle is left to that nozzle's
-    own row. This mode does not turn one nozzle's rectangle into the combined bed.
+    A fit inside one nozzle wins. Height is the caller's check. A diagonal-only fit on one
+    nozzle is left to that nozzle's own row. This mode does not turn that rectangle into the
+    combined bed.
     """
-    width, depth, _height = size
+    single = single_nozzle_angle(size, edge, bed, left_width)
+    if single is not None:
+        return single
     bed_x = bed[0] - 2 * edge
     bed_y = bed[1] - 2 * edge
     nozzle_x = left_width - 2 * edge
-    options = ((0.0, width, depth), (90.0, depth, width))
-    for rot, along, across in options:
-        if along <= nozzle_x + EPS and across <= bed_y + EPS:
-            return rot
-    for rot, along, across in options:
+    for rot, along, across in _axis_options(size):
         if nozzle_x + EPS < along <= bed_x + EPS and across <= bed_y + EPS:
             return rot
     return None

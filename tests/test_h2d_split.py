@@ -179,10 +179,40 @@ def test_plan_splits_only_the_wide_part():
     assert "nozzle" not in left_plan["plates"][0]["items"][0]
 
 
+def test_edge_inset_and_shared_wide_plate():
+    """A part inside the raw nozzle width can still need the combined bed once the edge is removed.
+    Several bars that need that bed share one plate."""
+    both, _left, _right, left_w, right_min = machine()
+    assert h2d_split.single_nozzle_angle([320, 40, 10], 0, both["bed"], left_w) == 0.0
+    assert h2d_split.single_nozzle_angle([320, 40, 10], 5, both["bed"], left_w) is None
+    assert h2d_split.fit_angle([320, 40, 10], 5, both["bed"], left_w) == 0.0
+    both = {**both, "enabled": True}
+    inset = [{"name": f"inset-{n}", "file": "inset", "qty": 1, "role": "main", "group": "g"} for n in ("a", "b")]
+    inset.append({"name": "narrow", "file": "narrow", "qty": 1, "role": "main", "group": "g"})
+    stats = {"inset": {"size": [320, 40, 10], "volume_cm3": 1, "area_cm2": 1},
+             "narrow": {"size": [100, 40, 10], "volume_cm3": 1, "area_cm2": 1}}
+    result = plates.plan(inset, {"printers": [both], "mode": "h2d-both", "groupBy": "color", "edge": 5, "spacing": 6}, lambda f: stats[f])
+    inset_plates = [pl for pl in result["plates"] if any(it["part"].startswith("inset") for it in pl["items"])]
+    assert len(inset_plates) == 1 and len(inset_plates[0]["items"]) == 2
+    for it in inset_plates[0]["items"]:
+        assert it["x"] == 5
+        assert it["x"] + it["w"] <= both["bed"][0] + 1e-6
+    narrow = [it for pl in result["plates"] for it in pl["items"] if it["part"] == "narrow"]
+    assert len(narrow) == 1 and narrow[0]["nozzle"] == "left" and "splitX" not in narrow[0]
+    bars = [{"name": f"bar-{n}", "file": "bar", "qty": 1, "role": "main", "group": "g"} for n in range(3)]
+    wide = plates.plan(bars, {"printers": [both], "mode": "h2d-both", "groupBy": "color", "edge": 0, "spacing": 6},
+                       lambda f: {"size": [330, 40, 10], "volume_cm3": 1, "area_cm2": 1})
+    split = [it for pl in wide["plates"] for it in pl["items"] if it.get("nozzle") == "split"]
+    assert len(split) == 3
+    assert sum(1 for pl in wide["plates"] if any(it.get("nozzle") == "split" for it in pl["items"])) == 1
+    assert all(right_min <= it["splitX"] <= left_w for it in split)
+
+
 if __name__ == "__main__":
     test_limits_and_single_nozzle_regression()
     test_cut_conserves_a_box()
     test_placed_split_stays_inside_each_nozzle()
     test_3mf_is_one_object_with_two_nozzles()
     test_plan_splits_only_the_wide_part()
+    test_edge_inset_and_shared_wide_plate()
     print("test_h2d_split ok")

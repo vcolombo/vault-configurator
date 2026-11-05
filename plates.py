@@ -374,15 +374,18 @@ def plan(parts, settings, stats_fn):
     plates = []
     for p in printers:
         mine = [it for it in items if it["printer"] == p["id"]]
-        split_mine = []
-        pack_bed = p["bed"]
+        queues = [(p["bed"], mine)]
         if p.get("nozzleMode") == "h2d-split":
-            # Single-nozzle parts stay inside the left nozzle's reach.
-            # Wider parts are packed on the combined bed and cut from the corners below.
+            # Same axis-aligned, edge-aware test as fit_angle. One nozzle's rectangle, then the
+            # combined bed. Both groups use the packer below; classify decides the cut.
             left_w, _right_min = split_reach(p)
-            split_mine = [it for it in mine if max(it["w"], it["d"]) > left_w + 1e-6]
-            mine = [it for it in mine if max(it["w"], it["d"]) <= left_w + 1e-6]
-            pack_bed = [left_w, p["bed"][1]]
+            one, wide = [], []
+            for it in mine:
+                if h2d_split.single_nozzle_angle([it["w"], it["d"], it["h"]], edge, p["bed"], left_w) is not None:
+                    one.append(it)
+                else:
+                    wide.append(it)
+            queues = [([left_w, p["bed"][1]], one), (list(p["bed"]), wide)]
 
         def keyf(it):
             if s["groupBy"] == "size":
@@ -390,38 +393,33 @@ def plan(parts, settings, stats_fn):
                 band = "large" if max(it["w"], it["d"]) > 0.5 * min(bed) else "small"
                 return (band, it["slot"])
             return (it["group"] if s["groupBy"] == "module" else "", it["slot"])
-        for key in sorted({keyf(it) for it in mine}, key=str):
-            bucket = sorted([it for it in mine if keyf(it) == key], key=lambda it: -(it["w"] * it["d"]))
-            # oversize parts that only fit across the diagonal: same size + angle share a plate, side by side
-            diag = {}
-            for it in bucket:
-                if it["diag"] is not None:
-                    diag.setdefault((round(it["diag"], 1), it["w"], it["d"]), []).append(it)
-            packers = []
-            for g_items in diag.values():
-                for row in diagonal_rows(g_items, pack_bed, gap, edge):
-                    pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
-                    pk.items, pk.diagonal = row, True
-                    pk.free = corner_rects(row[0], pack_bed, gap, pk.edge) if len(row) == 1 else []  # the corners stay usable
-                    packers.append(pk)
-            for it in bucket:
-                if it["diag"] is not None:
-                    continue
-                if not any(pk.place(it) for pk in packers):
-                    pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
-                    if not pk.place(it):  # as big as the bed itself: fits() allowed it with the user's keep-out, so centre it
-                        pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
-                    packers.append(pk)
-            for pk in packers:
-                plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": expand(pk.items), "fill": round(pk.fill(), 2),
-                               "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
-                               **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
-        for it in split_mine:
-            pk = Shelf(p["bed"], max(edge, SAFE_EDGE), gap)
-            if not pk.place(it):
-                pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
-            plates.append({"printer": p["id"], "group": it.get("group") or "", "slots": [it["slot"]], "items": expand(pk.items),
-                           "fill": round(pk.fill(), 2), "bed": list(p["bed"]), "origin": [0, 0]})
+        for pack_bed, group in queues:
+            for key in sorted({keyf(it) for it in group}, key=str):
+                bucket = sorted([it for it in group if keyf(it) == key], key=lambda it: -(it["w"] * it["d"]))
+                # oversize parts that only fit across the diagonal: same size + angle share a plate, side by side
+                diag = {}
+                for it in bucket:
+                    if it["diag"] is not None:
+                        diag.setdefault((round(it["diag"], 1), it["w"], it["d"]), []).append(it)
+                packers = []
+                for g_items in diag.values():
+                    for row in diagonal_rows(g_items, pack_bed, gap, edge):
+                        pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
+                        pk.items, pk.diagonal = row, True
+                        pk.free = corner_rects(row[0], pack_bed, gap, pk.edge) if len(row) == 1 else []  # the corners stay usable
+                        packers.append(pk)
+                for it in bucket:
+                    if it["diag"] is not None:
+                        continue
+                    if not any(pk.place(it) for pk in packers):
+                        pk = Shelf(pack_bed, max(edge, SAFE_EDGE), gap)
+                        if not pk.place(it):  # as big as the bed itself: fits() allowed it with the user's keep-out, so centre it
+                            pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
+                        packers.append(pk)
+                for pk in packers:
+                    plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": expand(pk.items), "fill": round(pk.fill(), 2),
+                                   "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
+                                   **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
     for n, pl in enumerate(plates):
         pl["name"] = plate_name(n + 1, pl, s)
         pl["grams"] = round(sum(i["grams"] for i in pl["items"]), 1)
