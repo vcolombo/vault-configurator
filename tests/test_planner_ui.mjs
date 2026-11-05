@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, decorateChoices, visiblePartRows, checkedCount } from "../planner.mjs";
+import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, decorateChoices, visiblePartRows, checkedCount, DEPTHS, ROOFS, depthLabel, clampDepth, clampRoof, catalogChoicesFor } from "../planner.mjs";
 
 const plate = { printer: "u1", slots: [0], items: [{ part: "Guide", x: 1, y: 2, rot: 0 }] };
 const key = plateKey(plate);
@@ -72,5 +72,73 @@ const none = decorateChoices([
 assert.match(none.warning, /stays selected/);
 const parts = [{ name: "XL7 Module 1F", fits: false }, { name: "Runner Stopper", fits: true }];
 assert.deepEqual(visiblePartRows(parts).map((part) => part.name), ["XL7 Module 1F", "Runner Stopper"]);
+
+assert.deepEqual(DEPTHS.map(depthLabel), [
+  "3 · 156.1 mm",
+  "4 · 198.1 mm",
+  "5 · 240.1 mm",
+  "6 · 282.1 mm",
+  "7 · 324.1 mm",
+]);
+assert.equal(clampDepth(""), 5);
+assert.equal(clampDepth(0), 5);
+assert.equal(clampDepth("4"), 4);
+assert.equal(clampDepth("", 7), 7);
+assert.equal(clampRoof(""), "none");
+assert.equal(clampRoof("", "grid"), "grid");
+assert.equal(clampRoof("bowl"), "bowl");
+
+const fresh = catalogChoicesFor("depth", { layers: [], choices: null, fitOnly: false, current: 5 });
+assert.deepEqual(fresh.options.map((option) => option.value), DEPTHS);
+assert.equal(fresh.selected, 5);
+assert.equal(fresh.options.find((option) => option.value === 5).selected, true);
+assert.ok(fresh.options.every((option) => !option.disabled && option.mark === ""));
+
+const blank = catalogChoicesFor("depth", { layers: [], choices: null, fitOnly: true, current: 0 });
+assert.equal(blank.selected, 5);
+assert.deepEqual(blank.options.map((option) => option.value), DEPTHS);
+
+const judged = DEPTHS.map((value) => ({
+  value,
+  fits: value <= 5,
+  reason: value > 5 ? `${value} does not fit` : "",
+}));
+const cleared = catalogChoicesFor("depth", { layers: [], choices: { depth: judged }, fitOnly: true, current: 7 });
+assert.deepEqual(cleared.options.map((option) => option.value), DEPTHS);
+assert.equal(cleared.selected, 7);
+assert.ok(cleared.options.every((option) => !option.disabled && option.mark === ""));
+
+const withLayers = { layers: [{ layout: "S" }], choices: { depth: judged } };
+const filtered = catalogChoicesFor("depth", { ...withLayers, fitOnly: true, current: 7 });
+assert.deepEqual(filtered.options.map((option) => option.value), DEPTHS);
+assert.equal(filtered.options.find((option) => option.value === 7).disabled, false);
+assert.equal(filtered.options.find((option) => option.value === 7).selected, true);
+assert.equal(filtered.options.find((option) => option.value === 7).mark, "does not fit");
+assert.equal(filtered.options.find((option) => option.value === 6).disabled, true);
+assert.equal(filtered.options.find((option) => option.value === 6).mark, "");
+assert.equal(filtered.options.find((option) => option.value === 5).disabled, false);
+
+const unfiltered = catalogChoicesFor("depth", { ...withLayers, fitOnly: false, current: 7 });
+assert.deepEqual(unfiltered.options.map((option) => option.value), DEPTHS);
+assert.ok(unfiltered.options.every((option) => !option.disabled && option.mark === ""));
+assert.equal(unfiltered.options.find((option) => option.value === 7).selected, true);
+
+const partial = [
+  { value: 7, fits: false, reason: "too deep" },
+  { value: 3, fits: true },
+];
+const keptOff = catalogChoicesFor("depth", { layers: [{}], choices: { depth: partial }, fitOnly: false, current: 7 });
+assert.deepEqual(keptOff.options.map((option) => option.value), [7, 3]);
+assert.ok(keptOff.options.every((option) => !option.disabled && option.mark === ""));
+const keptOn = catalogChoicesFor("depth", { layers: [{}], choices: { depth: partial }, fitOnly: true, current: 3 });
+assert.deepEqual(keptOn.options.map((option) => option.value), [7, 3]);
+assert.equal(keptOn.options[0].disabled, true);
+assert.equal(keptOn.options[1].disabled, false);
+assert.equal(keptOn.options[1].selected, true);
+
+const roof = catalogChoicesFor("roof", { layers: [], choices: null, fitOnly: true, current: "" });
+assert.deepEqual(roof.options.map((option) => option.value), ROOFS);
+assert.equal(roof.selected, "none");
+assert.ok(roof.options.every((option) => !option.disabled));
 
 console.log("test_planner_ui ok");
