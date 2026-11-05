@@ -60,10 +60,12 @@ def fit_angle(size, edge=0.0):
 
 
 def _placed_corners(item):
-    angle = math.radians(item.get("rot") or 0)
-    c, s = math.cos(angle), math.sin(angle)
-    width, depth = item["w"], item["d"]
-    return [(item["x"] + u * c - v * s, item["y"] + u * s + v * c) for u, v in ((0, 0), (width, 0), (width, depth), (0, depth))]
+    """Same corners as plates.footprint_corners.
+
+    plates imports this module, so the shared formula is loaded inside the function.
+    """
+    import plates
+    return plates.footprint_corners(item)
 
 
 def annotate_item(item):
