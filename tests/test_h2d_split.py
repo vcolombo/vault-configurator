@@ -36,57 +36,83 @@ def box(w, d, h):
     return out
 
 
-def test_limits_and_single_nozzle_regression():
+def machine():
     left = plates.catalog_printer("Bambu Lab H2D · left nozzle", "h2d-left")
     right = plates.catalog_printer("Bambu Lab H2D · right nozzle", "h2d-right")
+    both = plates.catalog_printer("Bambu Lab H2D · both nozzles (split)", "h2d-both")
+    return both, left, right, left["bed"][0], right["origin"][0]
+
+
+def world(tri, x, y, rot):
+    placed = mesh.rotate_z(tri, rot)
+    placed = np.array(placed, copy=True)
+    placed[:, :, 0] += x
+    placed[:, :, 1] += y
+    return placed
+
+
+def test_limits_and_single_nozzle_regression():
+    both, left, right, left_w, _right_min = machine()
     assert plates.fits([200, 80, 40], left) is not None
     assert plates.fits([200, 80, 40], right) is not None
-    assert plates.fits([418.8, 47, 10], left) is None  # wider than 325 and than 350
-    assert h2d_split.fit_angle([418.8, 47, 10]) is None
-    assert h2d_split.fit_angle([360, 40, 20]) is None
-    assert h2d_split.fit_angle([200, 80, 40]) == 0.0
-    assert h2d_split.fit_angle([340, 40, 20]) == 0.0
-    assert h2d_split.fit_angle([40, 340, 20]) == 90.0
+    assert plates.fits([418.8, 47, 10], left) is None  # wider than one nozzle and than the combined bed
+    assert h2d_split.fit_angle([418.8, 47, 10], 0, both["bed"], left_w) is None
+    assert h2d_split.fit_angle([360, 40, 20], 0, both["bed"], left_w) is None
+    assert h2d_split.fit_angle([200, 80, 40], 0, both["bed"], left_w) == 0.0
+    assert h2d_split.fit_angle([340, 40, 20], 0, both["bed"], left_w) == 0.0
+    assert h2d_split.fit_angle([40, 340, 20], 0, both["bed"], left_w) == 90.0
     # A thin bar can still lie on the left nozzle diagonally. Combined mode does not claim that as a split.
     assert plates.fits([400, 20, 10], left) is not None
-    assert h2d_split.fit_angle([400, 20, 10]) is None
+    assert h2d_split.fit_angle([400, 20, 10], 0, both["bed"], left_w) is None
+    short = {**both, "maxH": 10}
+    assert plates.fits([200, 40, 20], short) is None  # the shared height limit still applies
 
 
 def test_cut_conserves_a_box():
     solid = box(340, 100, 20)
-    original = h2d_split.mesh_volume(solid)
+    original = mesh.mesh_volume(solid)
     left, right = h2d_split.split_mesh(solid, 175)
     assert h2d_split.watertight(left) and h2d_split.watertight(right)
-    assert abs((h2d_split.mesh_volume(left) + h2d_split.mesh_volume(right)) - original) < 1e-3
+    assert abs((mesh.mesh_volume(left) + mesh.mesh_volume(right)) - original) < 1e-3
     assert left[:, :, 0].max() <= 175 + 1e-4
     assert right[:, :, 0].min() >= 175 - 1e-4
     # The parts meet. They do not overlap as solids and they do not leave a gap.
     assert abs(left[:, :, 0].max() - right[:, :, 0].min()) < 1e-4
-    assert abs(h2d_split.mesh_volume(left) - 175 * 100 * 20) < 1e-2
-    assert abs(h2d_split.mesh_volume(right) - 165 * 100 * 20) < 1e-2
+    assert abs(mesh.mesh_volume(left) - 175 * 100 * 20) < 1e-2
+    assert abs(mesh.mesh_volume(right) - 165 * 100 * 20) < 1e-2
 
 
 def test_placed_split_stays_inside_each_nozzle():
+    both, _left, _right, left_max, right_min = machine()
+    plate_x = both["bed"][0]
     solid = box(340, 80, 15)
-    placed = h2d_split.place_mesh(solid, 1, 2, 0)
     item = {"x": 1, "y": 2, "rot": 0, "w": 340, "d": 80}
-    h2d_split.annotate_item(item)
+    h2d_split.classify(item, plates.footprint_corners(item), both["bed"], left_max, right_min)
     assert item["nozzle"] == "split"
     cut = item["splitX"]
-    assert h2d_split.RIGHT_MIN <= cut <= h2d_split.LEFT_MAX
-    halves = h2d_split.split_placed(solid, 1, 2, 0, cut)
+    assert right_min <= cut <= left_max
+    halves = h2d_split.split_for_pose(solid, item["x"], item["rot"], cut)
     assert halves is not None
-    left, right = halves
-    assert left[:, :, 0].min() >= -1e-4 and left[:, :, 0].max() <= h2d_split.LEFT_MAX + 1e-4
-    assert right[:, :, 0].min() >= h2d_split.RIGHT_MIN - 1e-4 and right[:, :, 0].max() <= h2d_split.PLATE_X + 1e-4
-    assert abs(h2d_split.mesh_volume(left) + h2d_split.mesh_volume(right) - h2d_split.mesh_volume(placed)) < 1e-2
+    left, right = (world(half, item["x"], item["y"], item["rot"]) for half in halves)
+    assert left[:, :, 0].min() >= -1e-4 and left[:, :, 0].max() <= left_max + 1e-4
+    assert right[:, :, 0].min() >= right_min - 1e-4 and right[:, :, 0].max() <= plate_x + 1e-4
+    assert abs(mesh.mesh_volume(left) + mesh.mesh_volume(right) - mesh.mesh_volume(solid)) < 1e-2
     # A part that fits the left nozzle is not split.
     narrow = {"x": 0, "y": 0, "rot": 0, "w": 200, "d": 80}
-    h2d_split.annotate_item(narrow)
+    h2d_split.classify(narrow, plates.footprint_corners(narrow), both["bed"], left_max, right_min)
     assert narrow["nozzle"] == "left" and "splitX" not in narrow
     wide = {"x": 0, "y": 0, "rot": 0, "w": 360, "d": 40}
-    h2d_split.annotate_item(wide)
+    h2d_split.classify(wide, plates.footprint_corners(wide), both["bed"], left_max, right_min)
     assert wide["nozzle"] == "unsplittable"
+    turned = {"x": 340, "y": 0, "rot": 90, "w": 80, "d": 340}
+    h2d_split.classify(turned, plates.footprint_corners(turned), both["bed"], left_max, right_min)
+    assert turned["nozzle"] == "split"
+    halves = h2d_split.split_for_pose(box(80, 340, 15), turned["x"], 90, turned["splitX"])
+    assert halves is not None
+    left, right = (world(half, turned["x"], turned["y"], 90) for half in halves)
+    assert left[:, :, 0].max() <= left_max + 1e-3
+    assert right[:, :, 0].min() >= right_min - 1e-3
+    assert abs(mesh.mesh_volume(halves[0]) + mesh.mesh_volume(halves[1]) - mesh.mesh_volume(box(80, 340, 15))) < 1e-2
 
 
 def test_3mf_is_one_object_with_two_nozzles():
@@ -110,10 +136,19 @@ def test_3mf_is_one_object_with_two_nozzles():
     assert extruders == ["1", "2"]
     names = re.findall(r'<part id="\d+"[^>]*>.*?<metadata key="name" value="([^"]+)"', cfg, re.S)
     assert names == ["synthetic bar · left nozzle", "synthetic bar · right nozzle"]
-    # Read the stored meshes back and check the reach after the identity transform.
-    assert "experimental" not in path
     outside = mesh.verify_3mf(path, (350, 320))
     assert outside == []
+    # The right half is its own component. Shifting only that mesh must fail the plate check.
+    right = right.copy()
+    right[:, :, 0] += 400
+    mesh.write_3mf(path, [{
+        "name": "synthetic bar",
+        "parts": [
+            {"name": "synthetic bar · left nozzle", "mesh": left, "extruder": 1},
+            {"name": "synthetic bar · right nozzle", "mesh": right, "extruder": 2},
+        ],
+    }], [{"name": "split", "items": [(0, 0, 0, 0)]}], (350, 320), "h2d split test")
+    assert mesh.verify_3mf(path, (350, 320))
 
 
 def test_plan_splits_only_the_wide_part():
@@ -133,7 +168,9 @@ def test_plan_splits_only_the_wide_part():
     assert any(row["name"] == "too" for row in result["unplaceable"])
     split = [it for pl in result["plates"] for it in pl["items"] if it.get("nozzle") == "split"]
     assert len(split) == 1 and split[0]["part"] == "wide"
-    assert h2d_split.RIGHT_MIN <= split[0]["splitX"] <= h2d_split.LEFT_MAX
+    _both, _left, _right, left_max, right_min = machine()
+    assert right_min <= split[0]["splitX"] <= left_max
+    assert all("h2dSplit" not in pl for pl in result["plates"])
     narrow = [it for pl in result["plates"] for it in pl["items"] if it["part"] == "narrow"]
     assert narrow and narrow[0]["nozzle"] == "left"
     left = {**plates.catalog_printer("Bambu Lab H2D · left nozzle", "h2d-left"), "enabled": True, "nozzle": "0.4", "preset": ""}

@@ -6,25 +6,20 @@ The guide says the build plate is 350 mm wide and each nozzle reaches 325 mm. Ne
 can enter the other's restricted strip. A full-width single-material model is cut into parts
 of one object ("Cut to parts", with orientation kept), and each part is assigned to one nozzle.
 
-This file uses the reaches already in the printer catalog: the left nozzle is x = 0…325 and
-the right nozzle starts at x = 25, so it covers x = 25…350. The shared band is x = 25…325.
+The plate size and the nozzle reaches are the printer catalog rows. This module does not keep
+a second copy. The caller passes the combined bed, the left nozzle's width, and the right
+nozzle's origin. The shared band is the overlap of those two reaches.
 The guide does not describe an overlap, a scarf, or a glued pair of separate objects. The cut
 here is one vertical plane. The two parts meet on that plane and stay one object.
 
-A part that fits inside either nozzle's 325 × 320 mm reach is not split. A part that only fits
-when turned onto the diagonal is not auto-split; the guide's automated case is a straight cut.
-Anything wider than 350 mm, or taller than both nozzles can print, is refused.
+A part that fits inside one nozzle's reach is not split. A part that only fits when turned
+onto the diagonal is not auto-split; the guide's automated case is a straight cut.
+Anything wider than the combined bed, or taller than the printer allows, is refused.
 """
-import math
-
 import numpy as np
 
-# Catalog rows: left bed 325 × 320 at x = 0, right bed 325 wide with origin x = 25.
-PLATE_X = 350.0
-PLATE_Y = 320.0
-LEFT_MAX = 325.0
-RIGHT_MIN = 25.0
-Z_LIMIT = 320.0  # the left nozzle's Z in the catalog; both nozzles have to print a split part
+import mesh
+
 EPS = 1e-6
 
 MANUAL_STEPS = (
@@ -37,18 +32,16 @@ MANUAL_STEPS = (
 )
 
 
-def fit_angle(size, edge=0.0):
-    """0 or 90 if the part can sit axis-aligned on the 350 mm plate, else None.
+def fit_angle(size, edge, bed, left_width):
+    """0 or 90 if the part can sit axis-aligned on the combined bed, else None.
 
-    A diagonal-only fit on one nozzle is left to that nozzle's own row. This mode does not
-    turn the 325 mm rectangle into a 350 mm one.
+    Height is the caller's check. A diagonal-only fit on one nozzle is left to that nozzle's
+    own row. This mode does not turn one nozzle's rectangle into the combined bed.
     """
-    width, depth, height = size
-    if height > Z_LIMIT:
-        return None
-    bed_x = PLATE_X - 2 * edge
-    bed_y = PLATE_Y - 2 * edge
-    nozzle_x = LEFT_MAX - 2 * edge
+    width, depth, _height = size
+    bed_x = bed[0] - 2 * edge
+    bed_y = bed[1] - 2 * edge
+    nozzle_x = left_width - 2 * edge
     options = ((0.0, width, depth), (90.0, depth, width))
     for rot, along, across in options:
         if along <= nozzle_x + EPS and across <= bed_y + EPS:
@@ -59,30 +52,25 @@ def fit_angle(size, edge=0.0):
     return None
 
 
-def _placed_corners(item):
-    """Same corners as plates.footprint_corners.
-
-    plates imports this module, so the shared formula is loaded inside the function.
-    """
-    import plates
-    return plates.footprint_corners(item)
-
-
-def annotate_item(item):
-    """Mark a packed part single-nozzle or split, from where it actually sits on the plate."""
-    xs = [p[0] for p in _placed_corners(item)]
-    ys = [p[1] for p in _placed_corners(item)]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
+def classify(item, corners, plate, left_max, right_min):
+    """Set nozzle and splitX from corners the planner already computed. Does not move the part."""
+    xs = [p[0] for p in corners]
+    ys = [p[1] for p in corners]
+    plate_x, plate_y = plate
     item.pop("splitX", None)
-    if min_x < -EPS or max_x > PLATE_X + EPS or min_y < -EPS or max_y > PLATE_Y + EPS:
+    if not xs:
         item["nozzle"] = "unsplittable"
         return item
-    spans_left = min_x < RIGHT_MIN - EPS
-    spans_right = max_x > LEFT_MAX + EPS
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    if min_x < -EPS or max_x > plate_x + EPS or min_y < -EPS or max_y > plate_y + EPS:
+        item["nozzle"] = "unsplittable"
+        return item
+    spans_left = min_x < right_min - EPS
+    spans_right = max_x > left_max + EPS
     if spans_left and spans_right:
-        low = max(RIGHT_MIN, min_x)
-        high = min(LEFT_MAX, max_x)
+        low = max(right_min, min_x)
+        high = min(left_max, max_x)
         if high - low < 1.0:
             item["nozzle"] = "unsplittable"
             return item
@@ -91,24 +79,6 @@ def annotate_item(item):
         return item
     item["nozzle"] = "right" if spans_right else "left"
     return item
-
-
-def annotate_plate(plate):
-    for item in plate["items"]:
-        annotate_item(item)
-    return plate
-
-
-def place_mesh(tri, x, y, rot):
-    """Apply the same Z rotation and translation the 3MF writer uses."""
-    out = np.array(tri, dtype=float, copy=True)
-    angle = math.radians(rot or 0)
-    c, s = math.cos(angle), math.sin(angle)
-    u = out[:, :, 0].copy()
-    v = out[:, :, 1].copy()
-    out[:, :, 0] = x + u * c - v * s
-    out[:, :, 1] = y + u * s + v * c
-    return out
 
 
 def _inside(point, plane, keep_left):
@@ -290,17 +260,27 @@ def split_mesh(tri, plane):
         if float(normals[:, 0].sum()) * want < 0:
             cap_arr = cap_arr[:, ::-1, :]
         joined = np.concatenate([body_arr, cap_arr])
-        if mesh_volume(joined) <= 0 or not watertight(joined):
+        if mesh.mesh_volume(joined) <= 0 or not watertight(joined):
             return None
         out.append(joined)
     return out[0], out[1]
 
 
-def mesh_volume(tri):
-    tri = np.asarray(tri, dtype=float)
-    return float(np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6.0)
+def split_for_pose(tri, x, rot, world_plane):
+    """Cut in the part frame. The 3MF writer applies (x, y, rot) afterwards.
 
-
-def split_placed(tri, x, y, rot, plane):
-    """Place a local mesh, then cut it. None keeps the caller on the unsplit mesh."""
-    return split_mesh(place_mesh(tri, x, y, rot), plane)
+    At rotation 0, world X is local X. At rotation 90, world X is local Y and decreases as
+    that axis grows, which a +90° turn makes into local X for the cut.
+    Returns (left nozzle, right nozzle) in the original part frame, or None.
+    """
+    turn = int(rot or 0) % 360
+    if turn == 0:
+        return split_mesh(tri, world_plane - x)
+    if turn == 90:
+        turned = mesh.rotate_z(np.asarray(tri, dtype=float), 90)
+        halves = split_mesh(turned, world_plane - x)
+        if not halves:
+            return None
+        left, right = halves
+        return mesh.rotate_z(left, -90), mesh.rotate_z(right, -90)
+    return None

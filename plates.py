@@ -104,19 +104,28 @@ def diagonal_fit(a, b, x, y):
     return None
 
 
+def split_reach(printer):
+    """Left-nozzle width and right-nozzle origin for a combined H2D row, read from the catalog."""
+    profile = printer.get("profile")
+    left = next(p for p in PRINTER_CATALOG if p.get("profile") == profile and p.get("nozzleSide") == "left")
+    right = next(p for p in PRINTER_CATALOG if p.get("profile") == profile and p.get("nozzleSide") == "right")
+    return left["bed"][0], right["origin"][0]
+
+
 def fits(size, printer, edge=0):
     """Placement angle (0, 90 or a diagonal) or None. Same rule as the ussadesign 'Printers' tab:
     the part's footprint may be rotated freely on the bed; height must clear the printer's Z and the
     user's 'max part height' (e.g. keep tall parts off a bed-slinger).
 
     The H2D combined row is not a larger single-nozzle bed. It only accepts an axis-aligned pose
-    on the 350 mm plate, and a later step cuts parts that enter both exclusive strips.
+    on the combined plate. Height uses the same limit as every other printer.
     """
-    if printer.get("nozzleMode") == "h2d-split":
-        return h2d_split.fit_angle(size, edge)
     w, d, h = size
     if h > min(printer["z"], printer.get("maxH") or printer["z"]):
         return None
+    if printer.get("nozzleMode") == "h2d-split":
+        left_width, _right_min = split_reach(printer)
+        return h2d_split.fit_angle(size, edge, printer["bed"], left_width)
     return diagonal_fit(w, d, printer["bed"][0] - 2 * edge, printer["bed"][1] - 2 * edge)
 
 
@@ -368,11 +377,12 @@ def plan(parts, settings, stats_fn):
         split_mine = []
         pack_bed = p["bed"]
         if p.get("nozzleMode") == "h2d-split":
-            # Single-nozzle parts stay inside the left nozzle's 325 mm reach.
-            # Wider parts are cut later and are not packed into that rectangle.
-            split_mine = [it for it in mine if max(it["w"], it["d"]) > h2d_split.LEFT_MAX + 1e-6]
-            mine = [it for it in mine if max(it["w"], it["d"]) <= h2d_split.LEFT_MAX + 1e-6]
-            pack_bed = [h2d_split.LEFT_MAX, p["bed"][1]]
+            # Single-nozzle parts stay inside the left nozzle's reach.
+            # Wider parts are packed on the combined bed and cut from the corners below.
+            left_w, _right_min = split_reach(p)
+            split_mine = [it for it in mine if max(it["w"], it["d"]) > left_w + 1e-6]
+            mine = [it for it in mine if max(it["w"], it["d"]) <= left_w + 1e-6]
+            pack_bed = [left_w, p["bed"][1]]
 
         def keyf(it):
             if s["groupBy"] == "size":
@@ -407,14 +417,11 @@ def plan(parts, settings, stats_fn):
                                "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
                                **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
         for it in split_mine:
-            # Flush to the left edge of the 350 mm plate, long side along X, one part per plate.
-            if it["w"] >= it["d"]:
-                placed = {**it, "x": 0.0, "y": 0.0, "rot": 0, "fw": it["w"], "fd": it["d"]}
-            else:
-                placed = {**it, "x": float(it["d"]), "y": 0.0, "rot": 90, "fw": it["d"], "fd": it["w"]}
-            plates.append({"printer": p["id"], "group": it.get("group") or "", "slots": [it["slot"]], "items": [placed],
-                           "fill": round(max(it["w"], it["d"]) * min(it["w"], it["d"]) / (h2d_split.PLATE_X * h2d_split.PLATE_Y), 2),
-                           "bed": [h2d_split.PLATE_X, h2d_split.PLATE_Y], "origin": [0, 0], "h2dSplit": True})
+            pk = Shelf(p["bed"], max(edge, SAFE_EDGE), gap)
+            if not pk.place(it):
+                pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
+            plates.append({"printer": p["id"], "group": it.get("group") or "", "slots": [it["slot"]], "items": expand(pk.items),
+                           "fill": round(pk.fill(), 2), "bed": list(p["bed"]), "origin": [0, 0]})
     for n, pl in enumerate(plates):
         pl["name"] = plate_name(n + 1, pl, s)
         pl["grams"] = round(sum(i["grams"] for i in pl["items"]), 1)
@@ -426,10 +433,12 @@ def plan(parts, settings, stats_fn):
               "missing": pieces - placed}  # placed + unplaceable quantities must add up to the BOM; anything else is a bug
     for pl in plates:
         owner = next(pr for pr in printers if pr["id"] == pl["printer"])
-        if owner.get("nozzleMode") == "h2d-split":
-            h2d_split.annotate_plate(pl)
+        reach = split_reach(owner) if owner.get("nozzleMode") == "h2d-split" else None
         for it in pl["items"]:
-            it["corners"] = [[round(x, 2), round(y, 2)] for x, y in footprint_corners(it)]
+            exact = list(footprint_corners(it))
+            if reach:
+                h2d_split.classify(it, exact, owner["bed"], reach[0], reach[1])
+            it["corners"] = [[round(x, 2), round(y, 2)] for x, y in exact]
     result["fingerprint"] = plate_fingerprint(plates)
     return result
 
@@ -497,7 +506,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
                 if it.get("nozzle") == "split":
                     progress(100 * done / total, f"{p['name']}: cutting {it['part']} for the two nozzles")
                     raw = mesh.load_aligned(root, it["file"], stats_fn(it["file"]))
-                    halves = h2d_split.split_placed(raw, it["x"], it["y"], it["rot"], it["splitX"])
+                    halves = h2d_split.split_for_pose(raw, it["x"], it["rot"], it["splitX"])
                     if not halves:
                         warn_parts.append(it["part"])
                         continue
@@ -506,11 +515,10 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
                         {"name": it["part"] + " · left nozzle", "mesh": left, "extruder": 1},
                         {"name": it["part"] + " · right nozzle", "mesh": right, "extruder": 2},
                     ]})
-                    # Placement is already in the vertex coordinates. The plate grid offset is still applied.
-                    items.append((len(objects) - 1, ox, oy, 0))
+                    items.append((len(objects) - 1, it["x"] + ox, it["y"] + oy, it["rot"]))
                     done += 1
                     continue
-                key = (it["file"], it["role"], preset, it.get("nozzle") or "")
+                key = (it["file"], it["role"], preset)
                 if key not in index:
                     progress(100 * done / total, f"{p['name']}: reading {it['part']} ({done + 1}/{total})")
                     index[key] = len(objects)
@@ -537,7 +545,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
             warn = (warn + " " if warn else "") + "Not exported, the cut could not be closed or the part is over 350 mm: " + ", ".join(warn_parts)
         if not objects:
             written.append({"file": path, "printer": p["name"], "plates": 0, "items": 0, "overrides": 0, "filaments": [],
-                            "warning": warn, "outside": [], "seconds": round(time.time() - t, 1), "experimental": split_file, "ready": False})
+                            "warning": warn, "outside": [], "seconds": round(time.time() - t, 1)})
             continue
         mesh.write_3mf(path, objects, plates, full_bed, f"{stack_name}{suffix} · {p['name']}", None if split_file else (project if project else None))
         progress(100 * done / total, f"{p['name']}: checking every piece is on its plate")
@@ -549,7 +557,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
             pl["file"] = os.path.basename(path)
         written.append({"file": path, "printer": p["name"], "plates": len(plates), "items": sum(len(pl["items"]) for pl in plates),
                         "overrides": sum(1 for o in objects if o["config"]), "filaments": fil_names, "warning": warn, "outside": outside,
-                        "seconds": round(time.time() - t, 1), "experimental": split_file, "ready": not split_file and not outside and not warn_parts})
+                        "seconds": round(time.time() - t, 1)})
         log(f"wrote {path} ({len(plates)} plates, {time.time() - t:.1f}s)")
     progress(100, "done")
     return written

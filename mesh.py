@@ -251,11 +251,13 @@ def verify_3mf(path, bed=None, tol=0.05, reach=None):
         model = z.read("3D/3dmodel.model").decode()
         ms = z.read("Metadata/model_settings.config").decode()
         proj = json.loads(z.read("Metadata/project_settings.config")) if "Metadata/project_settings.config" in z.namelist() else {}
-        comp = {m[0]: m[1] for m in re.findall(r'<object id="(\d+)"[^>]*>\s*<components>\s*<component p:path="([^"]+)"', model)}
+        comp = {}
+        for oid, body in re.findall(r'<object id="(\d+)"[^>]*>\s*<components>(.*?)</components>', model, re.S):
+            comp[oid] = re.findall(r'p:path="([^"]+)"', body)
         tf = {m[0]: [float(v) for v in m[1].split()] for m in re.findall(r'<item objectid="(\d+)"[^>]*transform="([^"]+)"', model)}
         names = dict(re.findall(r'<object id="(\d+)">\s*<metadata key="name" value="([^"]*)"', ms))
         meshes = {}
-        for sub in set(comp.values()):
+        for sub in {path for paths in comp.values() for path in paths}:
             xml = z.read(sub.lstrip("/")).decode()
             xy = np.array(re.findall(r'<vertex x="([-\d.eE+]+)" y="([-\d.eE+]+)"', xml), dtype=float)
             meshes[sub] = xy
@@ -274,10 +276,13 @@ def verify_3mf(path, bed=None, tol=0.05, reach=None):
     for i, p in enumerate(plates):
         px, py = (i % cols) * w * (1 + PLATE_GAP), -(i // cols) * d * (1 + PLATE_GAP)
         for oid in re.findall(r'key="object_id" value="(\d+)"', p):
-            t, xy = tf.get(oid), meshes.get(comp.get(oid))
-            if t is None or xy is None or not len(xy):
+            paths = comp.get(oid) or []
+            pieces = [meshes.get(path) for path in paths]
+            t = tf.get(oid)
+            if t is None or not pieces or any(xy is None or not len(xy) for xy in pieces):
                 problems.append({"plate": i + 1, "name": names.get(oid, oid), "overhang_mm": None})
                 continue
+            xy = np.concatenate(pieces, axis=0)
             wx = xy[:, 0] * t[0] + xy[:, 1] * t[3] + t[9]   # 3MF row-vector transform: x' = x*m00 + y*m10 + tx
             wy = xy[:, 0] * t[1] + xy[:, 1] * t[4] + t[10]
             over = max(px + rx - wx.min(), wx.max() - (px + rx + rw), py + ry - wy.min(), wy.max() - (py + ry + rd))
