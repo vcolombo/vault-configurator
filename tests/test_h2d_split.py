@@ -226,20 +226,32 @@ def test_tpu_wider_than_the_right_nozzle_is_refused():
 
 
 def test_right_only_preset_under_another_name_lands_right():
-    """filament_printable wins over the material name. A non-TPU slot that lists only nozzle 2 packs on the right."""
-    assert presets._slot_nozzle("PLA", ["2"]) == "2"
-    assert presets._slot_nozzle("TPU", None) == "2"
-    assert presets._slot_nozzle("PLA", ["1", "2"]) == "1"
+    """The preset's filament_printable wins over the material name. Settings filaments have no printable key."""
+    assert presets.nozzle_list(["PLA"], [["2"]]) == ["2"]
+    assert presets.nozzle_list(["TPU"], [[]]) == ["2"]
+    assert presets.nozzle_list(["PLA"], [["1", "2"]]) == ["1"]
     both = {**plates.catalog_printer("Bambu Lab H2D · both nozzles (split)", "h2d-both"), "enabled": True}
     filaments = [dict(f) for f in plates.DEFAULT_FILAMENTS]
-    filaments[0] = {**filaments[0], "name": "right-only PLA", "material": "PLA", "printable": ["2"]}
+    filaments[0] = {**filaments[0], "name": "right-only PLA", "material": "PLA"}
+    assert "printable" not in filaments[0]
     stats = {"tab": {"size": [80, 40, 10], "volume_cm3": 1, "area_cm2": 1}}
     parts = [{"name": "tab", "file": "tab", "qty": 1, "role": "main", "group": "g", "kind": "other"}]
-    result = plates.plan(parts, {"printers": [both], "mode": "h2d-both", "filaments": filaments}, lambda f: stats[f])
+
+    def fake_read(_slicer, names):
+        # The loaded preset for slot 0 is right-nozzle-only. The other presets are not loaded.
+        return [["2"]] + [[] for _ in list(names)[1:]]
+
+    saved = presets.read_filament_printables
+    presets.read_filament_printables = fake_read
+    try:
+        result = plates.plan(parts, {"printers": [both], "mode": "h2d-both", "filaments": filaments}, lambda f: stats[f])
+    finally:
+        presets.read_filament_printables = saved
     item = result["plates"][0]["items"][0]
-    assert item["nozzle"] == "right"
+    sides = result["nozzleLists"][both["id"]]
+    assert sides[0] == "2" and item["nozzle"] == "right"
     assert min(x for x, _y in item["corners"]) >= 25 - 0.05
-    left_ex, right_ex = presets.cut_extruders(filaments)
+    left_ex, right_ex = presets.cut_extruders(sides)
     assert left_ex == 2 and right_ex == 1  # slot 0 is the right-only PLA; the next PETG slot is the left nozzle
 
 
@@ -247,7 +259,8 @@ def test_tpu_slot_is_a_right_nozzle_hotend_without_a_cut():
     """No cut: TPU owns the right nozzle, so that hotend can be TPU High Flow and the slot is valid."""
     cfg = {"nozzle_diameter": ["0.4", "0.4"]}
     materials = ["PETG", "PETG", "PETG", "PETG", "TPU"]
-    note = presets.dual_nozzle_project(cfg, materials, per_slot=True)
+    sides = presets.nozzle_list(materials, [[] for _ in materials])
+    note = presets.dual_nozzle_project(cfg, materials, per_slot=True, nozzles=sides)
     assert note is None
     assert cfg["filament_map"] == ["1", "1", "1", "1", "2"]
     assert cfg["filament_map_mode"] == "Manual"
@@ -334,9 +347,10 @@ def test_exported_plates_hold_their_parts():
         w, d, h = st["size"]
         return box(w, d, h)
 
-    def project_stub(s, p):
+    def project_stub(s, p, nozzles=None):
         materials = [f.get("material") or "PETG" for f in s["filaments"]]
-        printables = [f.get("printable") if f.get("printable") is not None else f.get("filament_printable") for f in s["filaments"]]
+        if nozzles is None:
+            nozzles = presets.nozzle_list(materials, presets.read_filament_printables(p.get("slicer"), [""] * len(materials)))
         cfg = {
             "printable_area": ["0x0", "350x0", "350x320", "0x320"],
             "nozzle_diameter": ["0.4", "0.4"],
@@ -345,7 +359,7 @@ def test_exported_plates_hold_their_parts():
             "filament_settings_id": [f.get("name") or "" for f in s["filaments"]],
             "version": "02.08.00.06",
         }
-        note = presets.dual_nozzle_project(cfg, materials, p.get("nozzleSide"), p.get("nozzleMode") == "h2d-split", printables)
+        note = presets.dual_nozzle_project(cfg, materials, p.get("nozzleSide"), p.get("nozzleMode") == "h2d-split", nozzles)
         if note:
             cfg["_tpu_note"] = note
         return cfg, list(cfg["filament_settings_id"])
@@ -368,6 +382,7 @@ def test_exported_plates_hold_their_parts():
     assert not any(name.startswith("wide-bad") for name in names)
     assert any("left nozzle" in name for name in names) and any("right nozzle" in name for name in names)
     mapping = [int(v) for v in proj["filament_map"]]
+    assert [str(v) for v in mapping] == result["nozzleLists"][both["id"]]
     # Slot 0 (main PETG) stays on the left. Slot 4 (TPU) is the right nozzle. Slot 1 is not forced there.
     assert mapping[0] == 1 and mapping[1] == 1 and mapping[4] == 2
     assert proj["nozzle_volume_type"] == ["Standard", "TPU High Flow"]

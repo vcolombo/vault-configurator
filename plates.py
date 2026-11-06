@@ -373,6 +373,7 @@ def plan(parts, settings, stats_fn):
         it["diag"] = None if a in (0.0, 90.0) else a
         del it["angles"]
     plates = []
+    nozzle_lists = {}
     for p in printers:
         mine = [it for it in items if it["printer"] == p["id"]]
         # (bed, parts, nozzle). The queue is the nozzle. None means the combined bed, where
@@ -381,12 +382,13 @@ def plan(parts, settings, stats_fn):
         queues = [(p["bed"], mine, None)]
         if p.get("nozzleMode") == "h2d-split":
             left_w, right_min = split_reach(p)
+            sides = _printer_nozzles(s, p)
+            nozzle_lists[p["id"]] = sides
             one, right_parts, wide = [], [], []
             for it in mine:
                 fits_one = h2d_split.single_nozzle_angle([it["w"], it["d"], it["h"]], edge, p["bed"], left_w) is not None
                 slot = int(it.get("slot") or 0)
-                fil = s["filaments"][slot] if 0 <= slot < len(s["filaments"]) else {}
-                if presets.filament_nozzle(fil) == "2":
+                if slot < len(sides) and sides[slot] == "2":
                     if fits_one:
                         right_parts.append(it)
                     else:
@@ -450,6 +452,7 @@ def plan(parts, settings, stats_fn):
     pieces = sum(int(l.get("qty", 0)) for l in parts if l.get("file"))
     placed = sum(len(pl["items"]) for pl in plates)
     result = {"plates": plates, "unplaceable": unplaceable, "load": load, "pieces": pieces, "placed": placed,
+              "nozzleLists": nozzle_lists,  # one "1"/"2" per filament slot, shared with the 3MF map and the cut
               "missing": pieces - placed}  # placed + unplaceable quantities must add up to the BOM; anything else is a bug
     for pl in plates:
         owner = next(pr for pr in printers if pr["id"] == pl["printer"])
@@ -483,9 +486,25 @@ def filament_presets(s, p):
             for f in s["filaments"]]
 
 
-def project_for(s, p):
+def _printer_nozzles(s, p):
+    """The one nozzle list for this printer: settings material plus the preset's filament_printable."""
+    filaments = s.get("filaments") or []
+    materials = [f.get("material") or "PETG" for f in filaments]
+    if p.get("slicer") not in presets.SLICERS:
+        names = [""] * len(materials)
+    else:
+        names = filament_presets(s, p)
+        if len(names) != len(materials):
+            names = [""] * len(materials)
+    return presets.nozzle_list(materials, presets.read_filament_printables(p.get("slicer"), names))
+
+
+def project_for(s, p, nozzles=None):
     """project_settings.config for one printer: its machine + default process preset and one filament
-    preset per slot (filament_presets). None when unknown."""
+    preset per slot (filament_presets). None when unknown.
+
+    nozzles, when given, is the list plan already packed with. The project writes that list.
+    """
     import presets as presets_mod
     if p.get("slicer") not in presets_mod.SLICERS or not p.get("preset"):
         return None, []
@@ -495,7 +514,7 @@ def project_for(s, p):
     materials = [f.get("material") or "PETG" for f in s["filaments"]]
     try:
         return presets_mod.project_config(p["slicer"], machine, p["preset"], names, colours, p.get("nozzleSide"),
-                                          materials, p.get("nozzleMode") == "h2d-split"), names
+                                          materials, p.get("nozzleMode") == "h2d-split", nozzles), names
     except ValueError as e:
         return {"_error": str(e)}, names
 
@@ -521,7 +540,8 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         warn_parts = []
         ox, oy = p.get("origin") or (0, 0)  # where this nozzle's reach starts on the plate
         full_bed = (p["bed"][0] + ox, p["bed"][1] + oy)
-        left_ex, right_ex = presets.cut_extruders(s["filaments"])
+        sides = (plan_result.get("nozzleLists") or {}).get(p["id"])
+        left_ex, right_ex = presets.cut_extruders(sides)
         for pl in mine:
             items = []
             for it in pl["items"]:
@@ -563,7 +583,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         path = os.path.join(out_dir, f"{stack_name}{suffix}_{pname}.3mf")
         progress(100 * done / total, f"{p['name']}: writing {os.path.basename(path)} ({len(plates)} plates)")
         split_file = any(obj.get("parts") for obj in objects)
-        project, fil_names = project_for(s, p)
+        project, fil_names = project_for(s, p, sides)
         warn = h2d_split.MANUAL_STEPS if split_file else None
         note = None
         if project:

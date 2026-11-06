@@ -206,55 +206,68 @@ def _slot_nozzle(material, printable):
     return "1"
 
 
-def filament_nozzle(fil):
-    """Nozzle for one settings slot. Same rule as the project filament map."""
-    fil = fil or {}
-    printable = fil.get("printable")
-    if printable is None:
-        printable = fil.get("filament_printable")
-    return _slot_nozzle(fil.get("material"), printable)
+def read_filament_printables(slicer, preset_names):
+    """filament_printable for each preset name. [] when that preset is not loaded.
+
+    This is the only read of that field. An empty list leaves _slot_nozzle on the
+    material-name fallback ("TPU" -> right nozzle, anything else -> left).
+    """
+    fil_all = load_all(slicer, "filament") if slicer in SLICERS else {}
+    out = []
+    for name in preset_names or []:
+        flat = flatten(name, fil_all) if name else {}
+        out.append(flat.get("filament_printable") or [])
+    return out
 
 
-def cut_extruders(filaments):
-    """1-based filament slots for the two halves of a cut, from filament_nozzle.
+def nozzle_list(materials, printables):
+    """One "1" or "2" per slot. printables[i] is that preset's filament_printable, or []."""
+    printables = list(printables or [])
+    return [_slot_nozzle(materials[i], printables[i] if i < len(printables) else []) for i in range(len(materials))]
 
-    The first slot on each nozzle. A cut stores these in extruder, the same field
-    every other object uses for its filament slot.
+
+def cut_extruders(nozzles):
+    """1-based filament slots for the two halves of a cut: the first slot on each side of `nozzles`.
+
+    `nozzles` is the printer's nozzle list. A cut stores these numbers in extruder, the same
+    field every other object uses for its filament slot.
     """
     left = right = None
-    for i, fil in enumerate(filaments or []):
-        side = filament_nozzle(fil)
-        if side == "2" and right is None:
+    for i, side in enumerate(nozzles or []):
+        if str(side) == "2" and right is None:
             right = i + 1
-        elif side == "1" and left is None:
+        elif str(side) == "1" and left is None:
             left = i + 1
     return left, right
 
 
-def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, printables=None):
+def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, nozzles=None):
     """Filament-to-nozzle map and purge matrix the way Bambu Studio sizes them.
 
     flush_volumes_matrix is one n×n block per nozzle (diagonal 0, that filament does not
     purge into itself). flush_multiplier has one entry per nozzle. A shorter matrix is what
     Studio rebuilds as zeros, which is the 'Partial purging volume set to 0' warning.
-    per_slot is the combined H2D row: each slot uses _slot_nozzle, the same rule the packer uses.
+    per_slot writes `nozzles` straight into filament_map. That list is the one nozzle_list
+    for this printer; this function does not decide the nozzles again.
     """
     n = len(materials)
-    nozzles = max(1, len(cfg.get("nozzle_diameter") or [1]))
-    printables = list(printables or [])
+    nozzle_count = max(1, len(cfg.get("nozzle_diameter") or [1]))
     if nozzle_side in NOZZLE_MAP:
         mapping = [NOZZLE_MAP[nozzle_side]] * n
         mode = "Manual"
-    elif per_slot and nozzles >= 2:
-        mapping = [_slot_nozzle(material, printables[i] if i < len(printables) else None) for i, material in enumerate(materials)]
+    elif per_slot and nozzle_count >= 2:
+        mapping = list(nozzles) if nozzles is not None else nozzle_list(materials, [])
+        if len(mapping) < n:
+            mapping = mapping + ["1"] * (n - len(mapping))
+        mapping = mapping[:n]
         mode = "Manual"
     else:
         mapping = ["1"] * n
         mode = "Auto For Flush"
-    volumes = ["Standard"] * nozzles
+    volumes = ["Standard"] * nozzle_count
     note = None
-    if per_slot and nozzles >= 2:
-        for nozzle_i in range(nozzles):
+    if per_slot and nozzle_count >= 2:
+        for nozzle_i in range(nozzle_count):
             on = [materials[i] for i, side in enumerate(mapping) if int(side) - 1 == nozzle_i]
             tpu = [m for m in on if (m or "").strip().upper() == "TPU"]
             if tpu and len(tpu) == len(on):
@@ -265,13 +278,13 @@ def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, printa
     cfg["filament_map"] = mapping
     cfg["filament_map_mode"] = mode
     cfg["nozzle_volume_type"] = volumes
-    cfg["flush_multiplier"] = ["1"] * nozzles
-    cfg["flush_volumes_matrix"] = block * nozzles
+    cfg["flush_multiplier"] = ["1"] * nozzle_count
+    cfg["flush_volumes_matrix"] = block * nozzle_count
     cfg["flush_volumes_vector"] = ["140"] * (2 * n)
     return note
 
 
-def project_config(slicer, machine, process, filaments, colours, nozzle_side=None, materials=None, per_slot=False):
+def project_config(slicer, machine, process, filaments, colours, nozzle_side=None, materials=None, per_slot=False, nozzles=None):
     """Full project_settings.config dict: machine + process flattened, filament vectors concatenated
     per slot (variant-expanded keys get `filament_self_index` like Bambu Studio writes).
     nozzle_side "left"/"right" pins every filament to that nozzle of a dual-nozzle printer."""
@@ -307,8 +320,9 @@ def project_config(slicer, machine, process, filaments, colours, nozzle_side=Non
     cfg.update({"name": "project_settings", "from": "project", "version": vendor_version(slicer),
                 "different_settings_to_system": [""] * (n + 2), "curr_bed_type": "Textured PEI Plate"})
     slot_materials = list(materials) if materials is not None else [(F.get("filament_type") or [""])[0] for F in Fs]
-    printables = [F.get("filament_printable") or [] for F in Fs]
-    note = dual_nozzle_project(cfg, slot_materials, nozzle_side, per_slot, printables)
+    if per_slot and nozzles is None:
+        nozzles = nozzle_list(slot_materials, read_filament_printables(slicer, filaments))
+    note = dual_nozzle_project(cfg, slot_materials, nozzle_side, per_slot, nozzles)
     if note:
         cfg["_tpu_note"] = note
     return cfg
