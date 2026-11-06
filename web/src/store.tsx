@@ -83,7 +83,7 @@ function applyTheme(choice: ThemeChoice) {
   document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", dark ? "dark" : "light");
 }
 
-function signature(state: PlannerState): string {
+export function signature(state: PlannerState): string {
   return JSON.stringify({
     stack: state.stack,
     settings: state.settings,
@@ -91,6 +91,52 @@ function signature(state: PlannerState): string {
     fitOnly: state.fitOnly,
     fitTarget: state.fitTarget,
   });
+}
+
+function progressRows(next: Bom | null, prev: PlannerState) {
+  if (next) {
+    return {
+      hardware: (next.hardware || []).map((row) => ({ item: row.item, qty: Number(row.qty) })),
+      assemble: (next.parts || []).map((part) => ({ key: `${part.group}|${part.name}`, qty: Number(part.qty) })),
+    };
+  }
+  return {
+    hardware: Object.entries(prev.progress.hardware || {}).map(([item, row]) => ({ item, qty: Number(row?.qty) })),
+    assemble: Object.entries(prev.progress.assemble || {}).map(([key, row]) => ({ key, qty: Number(row?.qty) })),
+  };
+}
+
+/** One BOM result. A newer stack, settings, or fit target drops it. Progress is reconciled from `prev`. */
+export function applyBomResult(prev: PlannerState, requestSig: string, next: Bom): PlannerState {
+  if (signature(prev) !== requestSig) return prev;
+  const rows = progressRows(next, prev);
+  const reconciled = reconcileProgress(prev.progress, prev.progress.layoutKey || "", null, rows.hardware, rows.assemble);
+  const serverStack = next.stack;
+  const stackSame = !serverStack
+    || (JSON.stringify(serverStack.layers) === JSON.stringify(prev.stack.layers)
+      && serverStack.depth === prev.stack.depth
+      && JSON.stringify(serverStack.roof || {}) === JSON.stringify(prev.stack.roof || {}));
+  const progressSame = JSON.stringify(reconciled.progress) === JSON.stringify(prev.progress);
+  if (stackSame && progressSame) return prev;
+  return {
+    ...prev,
+    stack: stackSame || !serverStack ? prev.stack : {
+      ...prev.stack,
+      layers: serverStack.layers || prev.stack.layers,
+      depth: serverStack.depth ?? prev.stack.depth,
+      roof: { ...prev.stack.roof, ...(serverStack.roof || {}) },
+    },
+    progress: reconciled.progress,
+  };
+}
+
+/** Plate checks for one plan. Leaving Plates, or a newer plan input, drops it. */
+export function applyPlanProgress(prev: PlannerState, requestSig: string, plan: Plan, bom: Bom | null): { state: PlannerState; note: string } {
+  if (prev.tab !== "plates" || signature(prev) !== requestSig) return { state: prev, note: "" };
+  const rows = progressRows(bom, prev);
+  const reconciled = reconcileProgress(prev.progress, plan.fingerprint || "", plan.plates || [], rows.hardware, rows.assemble);
+  if (JSON.stringify(reconciled.progress) === JSON.stringify(prev.progress)) return { state: prev, note: reconciled.note || "" };
+  return { state: { ...prev, progress: reconciled.progress }, note: reconciled.note || "" };
 }
 
 export function PlannerProvider({ children }: { children: ReactNode }) {
@@ -118,7 +164,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [spoolStatus, setSpoolStatus] = useState("");
   const [presetStatus, setPresetStatus] = useState("");
   const stateRef = useRef<PlannerState | null>(null);
+  const bomRef = useRef<Bom | null>(null);
   stateRef.current = state;
+  bomRef.current = bom;
 
   useEffect(() => {
     applyTheme(theme);
@@ -181,12 +229,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const sig = state ? signature(state) : "";
   useEffect(() => {
     if (!stateRef.current || !meta) return;
+    const requested = stateRef.current;
+    const requestSig = signature(requested);
     let cancel = false;
     const timer = window.setTimeout(() => {
       void (async () => {
-        const current = stateRef.current;
-        if (!current || cancel) return;
-        if (!current.stack.layers.length) {
+        if (cancel) return;
+        if (!requested.stack.layers.length) {
           setBom(null);
           setStatus("");
           return;
@@ -194,50 +243,16 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         setStatus("Computing parts and geometry…");
         try {
           const next = await postJson<Bom>("/api/bom", {
-            stack: current.stack,
-            settings: current.settings,
-            overrides: current.overrides,
-            fitChoices: !!current.fitOnly,
-            fitTarget: current.fitTarget,
+            stack: requested.stack,
+            settings: requested.settings,
+            overrides: requested.overrides,
+            fitChoices: !!requested.fitOnly,
+            fitTarget: requested.fitTarget,
           });
-          if (cancel) return;
+          if (cancel || !stateRef.current || signature(stateRef.current) !== requestSig) return;
           setBom(next);
           setStatus("");
-          if (next.stack) {
-            const same = JSON.stringify(next.stack.layers) === JSON.stringify(current.stack.layers)
-              && next.stack.depth === current.stack.depth
-              && JSON.stringify(next.stack.roof || {}) === JSON.stringify(current.stack.roof || {});
-            if (!same) {
-              setState((prev) => {
-                if (!prev) return prev;
-                return {
-                  ...prev,
-                  stack: {
-                    ...prev.stack,
-                    layers: next.stack?.layers || prev.stack.layers,
-                    depth: next.stack?.depth ?? prev.stack.depth,
-                    roof: { ...prev.stack.roof, ...(next.stack?.roof || {}) },
-                  },
-                };
-              });
-            }
-          }
-          const hardware = (next.hardware || []).map((row) => ({ item: row.item, qty: Number(row.qty) }));
-          const assemble = (next.parts || []).map((part) => ({ key: `${part.group}|${part.name}`, qty: Number(part.qty) }));
-          const reconciled = reconcileProgress(current.progress, current.progress.layoutKey || "", null, hardware, assemble);
-          setState((prev) => (prev ? { ...prev, progress: reconciled.progress } : prev));
-          if (current.tab === "plates") {
-            const planned = await postJson<{ plan: Plan }>("/api/plan", {
-              stack: next.stack || current.stack,
-              settings: current.settings,
-              overrides: current.overrides,
-            });
-            if (cancel) return;
-            setPlan(planned.plan);
-            const again = reconcileProgress(reconciled.progress, planned.plan.fingerprint || "", planned.plan.plates, hardware, assemble);
-            setPlanNote(again.note || "");
-            setState((prev) => (prev ? { ...prev, progress: again.progress } : prev));
-          }
+          setState((prev) => (prev ? applyBomResult(prev, requestSig, next) : prev));
         } catch (error) {
           if (!cancel) setStatus(error instanceof Error ? error.message : "Could not compute this stack.");
         }
@@ -248,6 +263,46 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timer);
     };
   }, [sig, ready, meta]);
+
+  const planSig = state?.tab === "plates" ? sig : "";
+  useEffect(() => {
+    if (!ready || !meta || !stateRef.current || stateRef.current.tab !== "plates") return;
+    const requested = stateRef.current;
+    const requestSig = signature(requested);
+    if (!requested.stack.layers.length) {
+      setPlan(null);
+      setPlanNote("");
+      return;
+    }
+    let cancel = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await postJson<{ plan: Plan }>("/api/plan", {
+            stack: requested.stack,
+            settings: requested.settings,
+            overrides: requested.overrides,
+          });
+          if (cancel || !stateRef.current || stateRef.current.tab !== "plates" || signature(stateRef.current) !== requestSig) return;
+          setPlan(result.plan);
+          let note = "";
+          setState((prev) => {
+            if (!prev) return prev;
+            const applied = applyPlanProgress(prev, requestSig, result.plan, bomRef.current);
+            note = applied.note;
+            return applied.state;
+          });
+          setPlanNote(note);
+        } catch (error) {
+          if (!cancel) setExportStatus(error instanceof Error ? error.message : "Planning failed.");
+        }
+      })();
+    }, COMPUTE_MS);
+    return () => {
+      cancel = true;
+      window.clearTimeout(timer);
+    };
+  }, [planSig, ready, meta]);
 
   const api = useMemo<Store | null>(() => {
     if (!meta || !state) return null;

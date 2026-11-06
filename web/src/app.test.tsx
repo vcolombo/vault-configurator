@@ -1,8 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import type { Meta } from "./types";
+import { applyBomResult, signature } from "./store";
+import type { Meta, PlannerState } from "./types";
 
 const printers = [
   { id: "u1", name: "U1", profile: "Snapmaker U1", bed: [270, 270] as [number, number], z: 270, maxH: 270, enabled: true, forExport: true, slicer: "orca", nozzle: "0.4", preset: "" },
@@ -161,4 +162,49 @@ test("patch writes a legal export mode and fit target into saved state", async (
   expect(afterExport.settings.mode).toBe("both");
   expect(screen.getByLabelText("Send parts to")).toHaveValue("both");
   expect(screen.getByLabelText("All printers")).toHaveValue("every");
+});
+
+test("a BOM result keeps an assemble check and a stale stack is dropped", () => {
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false, gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  const prev = {
+    tab: "assemble",
+    fitTarget: "every",
+    fitOnly: false,
+    help: true,
+    merge: false,
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: {} },
+    settings: meta.defaults,
+    overrides: {},
+    tests: {},
+    projects: [],
+    activeProjectId: "",
+    progress: { layoutKey: "keep", plates: {}, hardware: {}, assemble: { "L1|Box": { qty: 1, done: true } } },
+  } as PlannerState;
+  const requestSig = signature(prev);
+  const bom = {
+    parts: [{ group: "L1", name: "Box", qty: 1, role: "main" }],
+    hardware: [],
+    warnings: [],
+    stack: prev.stack,
+  };
+  const kept = applyBomResult(prev, requestSig, bom);
+  expect(kept.progress.assemble?.["L1|Box"]?.done).toBe(true);
+  const edited = { ...prev, stack: { ...prev.stack, depth: 7 } };
+  expect(applyBomResult(edited, requestSig, bom)).toBe(edited);
+});
+
+test("opening Plates requests a plan without another stack edit", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Add layer" }));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+  const plans = () => vi.mocked(fetch).mock.calls.filter((call) => String(call[0]).includes("/api/plan")).length;
+  expect(plans()).toBe(0);
+  await user.click(screen.getByRole("tab", { name: "3 Plates" }));
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+  expect(plans()).toBeGreaterThan(0);
 });
