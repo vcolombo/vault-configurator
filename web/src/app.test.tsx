@@ -229,6 +229,45 @@ test("a plan keeps the part rows already on prev and drops a stale stack", () =>
   expect(applyPlanProgress(edited, requestSig, plan, null).state).toBe(edited);
 });
 
+test("the first design row is the roof, and the bottom layer sets the family", async () => {
+  const user = userEvent.setup();
+  const layer = (type: string, layout: string) => ({
+    type, layout, height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  });
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: {
+      name: "my-vault",
+      depth: 5,
+      layers: [layer("Drawers", "S"), layer("Sustainers", "M")],
+      roof: { type: "none", topHandle: true },
+      mods: { backbone: "none", pegboard: "none" },
+    },
+    settings: meta.defaults,
+  }));
+  render(<App />);
+  expect(await screen.findByText("Pick a depth, stack layers so the first row is the top of the stack, finish with a roof.")).toBeInTheDocument();
+  expect(screen.getByText("Top of the list is the top of the stack.")).toBeInTheDocument();
+  expect(screen.queryByText(/bottom-up/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/first layer is the top/)).not.toBeInTheDocument();
+
+  const names = () => screen.getAllByRole("button", { name: /^Edit / }).map((button) => button.getAttribute("aria-label"));
+  expect(names()).toEqual(["Edit M sustainer", "Edit S drawer"]);
+  expect(screen.getAllByText(/^Layer \d/, { selector: "strong" }).map((node) => node.textContent)).toEqual([
+    "Layer 2 · M 2U Sustainers",
+    "Layer 1 · S 2U Drawers",
+  ]);
+
+  await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
+  expect([...screen.getByLabelText("Width").querySelectorAll("option")].map((option) => option.value)).toEqual(["S", "M", "L", "XL"]);
+  await user.click(screen.getByText("Width"));
+  expect(screen.getByText(/The bottom layer sets the family/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Move toward top" }));
+  expect(names()).toEqual(["Edit S drawer", "Edit M sustainer"]);
+});
+
 test("opening Plates requests a plan without another stack edit", async () => {
   const user = userEvent.setup();
   render(<App />);
