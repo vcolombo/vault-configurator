@@ -335,8 +335,7 @@ def printers_for_export(settings):
     printers = [p for p in s.get("printers") or [] if p.get("enabled", True) and p.get("forExport", True)]
     mode = s.get("mode")
     if mode and mode != "both":
-        chosen = [p for p in printers if p.get("id") == mode]
-        return chosen or printers
+        return [p for p in printers if p.get("id") == mode]
     return printers
 
 

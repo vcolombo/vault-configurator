@@ -100,6 +100,71 @@ export function layerNotes(layerEntry, parts, ids, layerNumber) {
   return notes;
 }
 
+/** Shelf rows shipped before nicknames. A saved row is still one of these only when every field matches. */
+export const LEGACY_FILAMENTS = [
+  { name: "light grey", color: "#9da3a8", material: "PETG" },
+  { name: "dark grey", color: "#4a4d50", material: "PETG" },
+  { name: "black", color: "#222426", material: "PETG" },
+  { name: "orange", color: "#ff7a1a", material: "PETG" },
+  { name: "black (soft)", color: "#1a1a1a", material: "TPU" },
+];
+
+/** Inventory that was named as a colour role, or an old brand default. Exact name only. */
+export const LEGACY_ROLE_NAMES = [
+  "Elegoo",
+  "PETG accent",
+  "TPU tyres",
+  "Body",
+  "Drawer interior",
+  "Knobs & handles",
+  "Knobs",
+  "Accent",
+  "TPU",
+];
+
+/** Display names the sample fleet used before the Name field was the label. */
+export const LEGACY_PRINTER_NAMES = {
+  u1: "Snapmaker U1",
+  p1s: "Bambu Lab P1S",
+  "h2d-left": "Bambu Lab H2D · left nozzle",
+  "h2d-right": "Bambu Lab H2D · right nozzle",
+};
+
+function sameShelf(row, legacy) {
+  return !!row && !!legacy
+    && row.name === legacy.name
+    && String(row.color || "").toLowerCase() === legacy.color
+    && row.material === legacy.material;
+}
+
+/**
+ * Replace a saved shop row with the current default, in one assignment, when that row is still a default.
+ * A hand-edited name, colour, or material stays. Missing `forExport` is left missing.
+ */
+export function migrateShop(settings, defaults) {
+  if (!settings || !defaults) return settings;
+  const nextFilaments = Array.isArray(defaults.filaments) ? defaults.filaments : [];
+  if (Array.isArray(settings.filaments)) {
+    settings.filaments = settings.filaments.map((row, index) => {
+      const fresh = nextFilaments[index];
+      const legacy = LEGACY_FILAMENTS[index];
+      const stillDefault = sameShelf(row, legacy) || LEGACY_ROLE_NAMES.includes(row && row.name);
+      if (!fresh || !stillDefault) return row;
+      return { ...JSON.parse(JSON.stringify(fresh)), preset: (row && row.preset) || {} };
+    });
+  }
+  const nextPrinters = Array.isArray(defaults.printers) ? defaults.printers : [];
+  if (Array.isArray(settings.printers)) {
+    settings.printers = settings.printers.map((row) => {
+      const fresh = nextPrinters.find((printer) => printer.id === row.id);
+      const legacyName = LEGACY_PRINTER_NAMES[row.id];
+      if (!fresh || !legacyName || row.name !== legacyName) return row;
+      return { ...row, name: fresh.name };
+    });
+  }
+  return settings;
+}
+
 /** Replace the untouched upstream H2C + Kobra pair with the fleet. A resized or extended list is kept. */
 export function migratePrinters(saved, fleet) {
   if (!Array.isArray(saved) || saved.length !== 2 || !Array.isArray(fleet)) return saved;

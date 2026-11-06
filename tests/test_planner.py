@@ -96,6 +96,15 @@ def test_export_for_does_not_change_fit_scope():
 
     packed = plates.plan(small, {"printers": [u1, p1s], "mode": "both"}, stats)
     assert {pl["printer"] for pl in packed["plates"]} == {"u1"}
+    # A mode that names a printer not ticked for this export packs nothing, not the rest of the fleet.
+    missed = plates.plan(small, {"printers": [u1, p1s], "mode": "p1s"}, stats)
+    assert missed["plates"] == []
+    h2d = dict(next(p for p in plates.DEFAULT_PRINTERS if p["id"] == "h2d-left"))
+    h2d["forExport"] = False
+    assert [p["id"] for p in plates.printers_for_export({"printers": [u1, h2d], "mode": "both"})] == ["u1"]
+    assert plates.printers_for_export({"printers": [u1, h2d], "mode": "h2d-left"}) == []
+    assert server.biggest_printer({"printers": [u1, h2d], "mode": "both"})["id"] == "u1"
+    assert server.biggest_printer({"printers": [u1, h2d], "mode": "h2d-left"}) is None
     judged, scope = stackfit.judged_printers({"printers": [u1, p1s]}, "every")
     assert scope == "every" and {p["id"] for p in judged} == {"u1", "p1s"}
     assert "Snapmaker U1" not in plates.sample_plan()["label"] or u1["name"] == "Snapmaker U1"
