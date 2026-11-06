@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import { applyBomResult, applyPlanProgress, signature } from "./store";
+import "./styles.css";
 import type { Meta, PlannerState } from "./types";
 
 const printers = [
@@ -227,6 +228,20 @@ test("a plan keeps the part rows already on prev and drops a stale stack", () =>
   expect(kept.state.progress.hardware?.Screws?.done).toBe(true);
   const edited = { ...prev, stack: { ...prev.stack, depth: 7 } };
   expect(applyPlanProgress(edited, requestSig, plan, null).state).toBe(edited);
+});
+
+test("the preview card does not cover the help section", async () => {
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
+  const preview = screen.getByRole("heading", { name: "Preview" }).closest(".preview-card");
+  const help = document.getElementById("help");
+  if (!preview || !help) throw new Error("preview and help should render");
+  expect(preview.contains(help)).toBe(false);
+  expect(preview.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const position = getComputedStyle(preview).position;
+  expect(position).not.toBe("sticky");
+  expect(position).not.toBe("fixed");
+  expect(position).not.toBe("absolute");
 });
 
 test("opening Plates requests a plan without another stack edit", async () => {
