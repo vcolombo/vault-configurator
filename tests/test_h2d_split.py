@@ -225,11 +225,29 @@ def test_tpu_wider_than_the_right_nozzle_is_refused():
     assert result["placed"] + sum(u.get("qty", 1) for u in result["unplaceable"]) == result["pieces"]
 
 
+def test_right_only_preset_under_another_name_lands_right():
+    """filament_printable wins over the material name. A non-TPU slot that lists only nozzle 2 packs on the right."""
+    assert presets._slot_nozzle("PLA", ["2"]) == "2"
+    assert presets._slot_nozzle("TPU", None) == "2"
+    assert presets._slot_nozzle("PLA", ["1", "2"]) == "1"
+    both = {**plates.catalog_printer("Bambu Lab H2D · both nozzles (split)", "h2d-both"), "enabled": True}
+    filaments = [dict(f) for f in plates.DEFAULT_FILAMENTS]
+    filaments[0] = {**filaments[0], "name": "right-only PLA", "material": "PLA", "printable": ["2"]}
+    stats = {"tab": {"size": [80, 40, 10], "volume_cm3": 1, "area_cm2": 1}}
+    parts = [{"name": "tab", "file": "tab", "qty": 1, "role": "main", "group": "g", "kind": "other"}]
+    result = plates.plan(parts, {"printers": [both], "mode": "h2d-both", "filaments": filaments}, lambda f: stats[f])
+    item = result["plates"][0]["items"][0]
+    assert item["nozzle"] == "right"
+    assert min(x for x, _y in item["corners"]) >= 25 - 0.05
+    left_ex, right_ex = presets.cut_extruders(filaments)
+    assert left_ex == 2 and right_ex == 1  # slot 0 is the right-only PLA; the next PETG slot is the left nozzle
+
+
 def test_tpu_slot_is_a_right_nozzle_hotend_without_a_cut():
     """No cut: TPU owns the right nozzle, so that hotend can be TPU High Flow and the slot is valid."""
     cfg = {"nozzle_diameter": ["0.4", "0.4"]}
     materials = ["PETG", "PETG", "PETG", "PETG", "TPU"]
-    note = presets.dual_nozzle_project(cfg, materials, per_slot=True, split_pair=False)
+    note = presets.dual_nozzle_project(cfg, materials, per_slot=True)
     assert note is None
     assert cfg["filament_map"] == ["1", "1", "1", "1", "2"]
     assert cfg["filament_map_mode"] == "Manual"
@@ -316,8 +334,9 @@ def test_exported_plates_hold_their_parts():
         w, d, h = st["size"]
         return box(w, d, h)
 
-    def project_stub(s, p, split_pair=False):
+    def project_stub(s, p):
         materials = [f.get("material") or "PETG" for f in s["filaments"]]
+        printables = [f.get("printable") if f.get("printable") is not None else f.get("filament_printable") for f in s["filaments"]]
         cfg = {
             "printable_area": ["0x0", "350x0", "350x320", "0x320"],
             "nozzle_diameter": ["0.4", "0.4"],
@@ -326,7 +345,7 @@ def test_exported_plates_hold_their_parts():
             "filament_settings_id": [f.get("name") or "" for f in s["filaments"]],
             "version": "02.08.00.06",
         }
-        note = presets.dual_nozzle_project(cfg, materials, p.get("nozzleSide"), p.get("nozzleMode") == "h2d-split", split_pair)
+        note = presets.dual_nozzle_project(cfg, materials, p.get("nozzleSide"), p.get("nozzleMode") == "h2d-split", printables)
         if note:
             cfg["_tpu_note"] = note
         return cfg, list(cfg["filament_settings_id"])
@@ -349,7 +368,9 @@ def test_exported_plates_hold_their_parts():
     assert not any(name.startswith("wide-bad") for name in names)
     assert any("left nozzle" in name for name in names) and any("right nozzle" in name for name in names)
     mapping = [int(v) for v in proj["filament_map"]]
-    assert mapping[0] == 1 and mapping[1] == 2 and mapping[4] == 2
+    # Slot 0 (main PETG) stays on the left. Slot 4 (TPU) is the right nozzle. Slot 1 is not forced there.
+    assert mapping[0] == 1 and mapping[1] == 1 and mapping[4] == 2
+    assert proj["nozzle_volume_type"] == ["Standard", "TPU High Flow"]
     assert proj["flush_multiplier"] == ["1", "1"]
     n = len(proj["filament_settings_id"])
     matrix = proj["flush_volumes_matrix"]
@@ -359,7 +380,12 @@ def test_exported_plates_hold_their_parts():
         for i in range(n):
             for j in range(n):
                 assert (block[i * n + j] == "0") is (i == j)
-    assert written[0]["warning"] and "TPU High Flow" in written[0]["warning"]
+    assert written[0]["warning"] and "filament slot" in written[0]["warning"]
+    halves = [part for plate in laid for part in plate if "nozzle" in part["name"]]
+    left = next(part for part in halves if "left nozzle" in part["name"])
+    right = next(part for part in halves if "right nozzle" in part["name"])
+    assert left["extruder"] == 1 and mapping[left["extruder"] - 1] == 1
+    assert right["extruder"] == 5 and mapping[right["extruder"] - 1] == 2
     seen = []
     for plate in laid:
         anchors = []
@@ -384,6 +410,7 @@ if __name__ == "__main__":
     test_plan_splits_only_the_wide_part()
     test_edge_inset_and_shared_wide_plate()
     test_tpu_wider_than_the_right_nozzle_is_refused()
+    test_right_only_preset_under_another_name_lands_right()
     test_tpu_slot_is_a_right_nozzle_hotend_without_a_cut()
     test_exported_plates_hold_their_parts()
     print("test_h2d_split ok")

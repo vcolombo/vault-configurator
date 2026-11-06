@@ -8,6 +8,7 @@ import time
 
 import h2d_split
 import mesh
+import presets
 
 # Default printers are filled in after PRINTER_CATALOG (U1, P1S, H2D left, H2D right).
 # "Add printer" list. Bambu beds from Bambu Studio's machine presets, Anycubic from Anycubic Slicer Next's,
@@ -374,32 +375,31 @@ def plan(parts, settings, stats_fn):
     plates = []
     for p in printers:
         mine = [it for it in items if it["printer"] == p["id"]]
-        # (bed, parts, x shift, nozzle lock). A shift moves a pack done in the left-nozzle
-        # rectangle onto the right nozzle (H2D right reach starts at x = 25).
-        queues = [(p["bed"], mine, 0.0, None)]
+        # (bed, parts, nozzle). The queue is the nozzle. None means the combined bed, where
+        # classify decides the cut. A right-nozzle pack is done in that nozzle's rectangle
+        # and then shifted by the catalog origin so the drawing uses combined-plate coordinates.
+        queues = [(p["bed"], mine, None)]
         if p.get("nozzleMode") == "h2d-split":
-            # Same axis-aligned, edge-aware test as fit_angle. TPU is packed in the right
-            # nozzle's rectangle: the 0.4 TPU 85A preset cannot print from the left nozzle.
-            # Anything that fits one nozzle but is not TPU stays on the left. Only a hard
-            # part that fits neither nozzle is cut across the combined bed.
             left_w, right_min = split_reach(p)
             one, right_parts, wide = [], [], []
             for it in mine:
                 fits_one = h2d_split.single_nozzle_angle([it["w"], it["d"], it["h"]], edge, p["bed"], left_w) is not None
-                if (_slot_material(s, it) or "").strip().upper() == "TPU":
+                slot = int(it.get("slot") or 0)
+                fil = s["filaments"][slot] if 0 <= slot < len(s["filaments"]) else {}
+                if presets.filament_nozzle(fil) == "2":
                     if fits_one:
                         right_parts.append(it)
                     else:
                         unplaceable.append({"name": it["part"], "size": [it["w"], it["d"], it["h"]], "qty": 1, "group": it["group"],
-                                            "reason": "TPU prints on the right nozzle only, and this part does not fit there"})
+                                            "reason": "this filament prints on the right nozzle only, and the part does not fit there"})
                     continue
                 if fits_one:
                     one.append(it)
                 else:
                     wide.append(it)
-            queues = [([left_w, p["bed"][1]], one, 0.0, None),
-                      ([left_w, p["bed"][1]], right_parts, float(right_min), "right"),
-                      (list(p["bed"]), wide, 0.0, None)]
+            queues = [([left_w, p["bed"][1]], one, "left"),
+                      ([left_w, p["bed"][1]], right_parts, "right"),
+                      (list(p["bed"]), wide, None)]
 
         def keyf(it):
             if s["groupBy"] == "size":
@@ -407,7 +407,7 @@ def plan(parts, settings, stats_fn):
                 band = "large" if max(it["w"], it["d"]) > 0.5 * min(bed) else "small"
                 return (band, it["slot"])
             return (it["group"] if s["groupBy"] == "module" else "", it["slot"])
-        for pack_bed, group, shift, lock in queues:
+        for pack_bed, group, nozzle in queues:
             for key in sorted({keyf(it) for it in group}, key=str):
                 bucket = sorted([it for it in group if keyf(it) == key], key=lambda it: -(it["w"] * it["d"]))
                 # oversize parts that only fit across the diagonal: same size + angle share a plate, side by side
@@ -432,12 +432,13 @@ def plan(parts, settings, stats_fn):
                         packers.append(pk)
                 for pk in packers:
                     packed = expand(pk.items)
-                    if shift:
+                    if nozzle == "right":
                         for it in packed:
-                            it["x"] = round(it["x"] + shift, 2)
-                    if lock:
+                            it["x"] = round(it["x"] + right_min, 2)
+                            it["nozzle"] = "right"
+                    elif nozzle == "left":
                         for it in packed:
-                            it["lock"] = lock
+                            it["nozzle"] = "left"
                     plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": packed, "fill": round(pk.fill(), 2),
                                    "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
                                    **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
@@ -455,8 +456,12 @@ def plan(parts, settings, stats_fn):
         reach = split_reach(owner) if owner.get("nozzleMode") == "h2d-split" else None
         for it in pl["items"]:
             exact = list(footprint_corners(it))
-            if reach:
-                h2d_split.classify(it, exact, owner["bed"], reach[0], reach[1], it.pop("lock", None))
+            if reach and it.get("nozzle") in ("left", "right"):
+                if not h2d_split.in_packed_reach(exact, owner["bed"], reach[0], reach[1], it["nozzle"]):
+                    it["nozzle"] = "unsplittable"
+                    it.pop("splitX", None)
+            elif reach:
+                h2d_split.classify(it, exact, owner["bed"], reach[0], reach[1])
             it["corners"] = [[round(x, 2), round(y, 2)] for x, y in exact]
     result["fingerprint"] = plate_fingerprint(plates)
     return result
@@ -478,15 +483,7 @@ def filament_presets(s, p):
             for f in s["filaments"]]
 
 
-def _slot_material(s, it):
-    fils = s.get("filaments") or []
-    slot = int(it.get("slot") or 0)
-    if 0 <= slot < len(fils):
-        return fils[slot].get("material") or ""
-    return ""
-
-
-def project_for(s, p, split_pair=False):
+def project_for(s, p):
     """project_settings.config for one printer: its machine + default process preset and one filament
     preset per slot (filament_presets). None when unknown."""
     import presets as presets_mod
@@ -498,7 +495,7 @@ def project_for(s, p, split_pair=False):
     materials = [f.get("material") or "PETG" for f in s["filaments"]]
     try:
         return presets_mod.project_config(p["slicer"], machine, p["preset"], names, colours, p.get("nozzleSide"),
-                                          materials, p.get("nozzleMode") == "h2d-split", split_pair), names
+                                          materials, p.get("nozzleMode") == "h2d-split"), names
     except ValueError as e:
         return {"_error": str(e)}, names
 
@@ -524,6 +521,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         warn_parts = []
         ox, oy = p.get("origin") or (0, 0)  # where this nozzle's reach starts on the plate
         full_bed = (p["bed"][0] + ox, p["bed"][1] + oy)
+        left_ex, right_ex = presets.cut_extruders(s["filaments"])
         for pl in mine:
             items = []
             for it in pl["items"]:
@@ -533,6 +531,9 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
                     warn_parts.append(it["part"])
                     continue
                 if it.get("nozzle") == "split":
+                    if not left_ex or not right_ex:
+                        warn_parts.append(it["part"])
+                        continue
                     progress(100 * done / total, f"{p['name']}: cutting {it['part']} for the two nozzles")
                     raw = mesh.load_aligned(root, it["file"], stats_fn(it["file"]))
                     halves = h2d_split.split_for_pose(raw, it["x"], it["rot"], it["splitX"])
@@ -541,8 +542,8 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
                         continue
                     left, right = halves
                     objects.append({"name": it["part"] + " (cut to parts)", "config": cfg, "parts": [
-                        {"name": it["part"] + " · left nozzle", "mesh": left, "extruder": 1},
-                        {"name": it["part"] + " · right nozzle", "mesh": right, "extruder": 2},
+                        {"name": it["part"] + " · left nozzle", "mesh": left, "extruder": left_ex},
+                        {"name": it["part"] + " · right nozzle", "mesh": right, "extruder": right_ex},
                     ]})
                     items.append((len(objects) - 1, it["x"] + ox, it["y"] + oy, it["rot"]))
                     done += 1
@@ -562,7 +563,7 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
         path = os.path.join(out_dir, f"{stack_name}{suffix}_{pname}.3mf")
         progress(100 * done / total, f"{p['name']}: writing {os.path.basename(path)} ({len(plates)} plates)")
         split_file = any(obj.get("parts") for obj in objects)
-        project, fil_names = project_for(s, p, split_pair=split_file)
+        project, fil_names = project_for(s, p)
         warn = h2d_split.MANUAL_STEPS if split_file else None
         note = None
         if project:

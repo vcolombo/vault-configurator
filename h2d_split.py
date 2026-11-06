@@ -24,11 +24,11 @@ EPS = 1e-6
 
 MANUAL_STEPS = (
     "This file was not opened in Bambu Studio here, so it is not marked ready to print. "
-    "The guide requires the same material in both nozzles (same brand and colour is recommended). "
-    "In the slicer, the object should be one body cut into parts: keep orientation, and assign the "
-    "left section to the left nozzle and the right section to the right nozzle. "
+    "A cut object is one body in two parts. The left part's extruder is the filament slot on the "
+    "left nozzle, and the right part's extruder is the filament slot on the right nozzle. "
+    "Both nozzles need the same material (same brand and colour is recommended). "
     "A seam remains on the cut. Supports cannot be given their own nozzle; do not add supports that "
-    "land in both the left-only strip and the right-only strip. Multi-colour is not set up by this export."
+    "land in both the left-only strip and the right-only strip."
 )
 
 
@@ -66,11 +66,29 @@ def fit_angle(size, edge, bed, left_width):
     return None
 
 
-def classify(item, corners, plate, left_max, right_min, lock=None):
-    """Set nozzle and splitX from corners the planner already computed. Does not move the part.
+def in_packed_reach(corners, plate, left_max, right_min, nozzle):
+    """True when corners sit inside the nozzle reach the part was packed for."""
+    xs = [p[0] for p in corners]
+    ys = [p[1] for p in corners]
+    if not xs:
+        return False
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    plate_x, plate_y = plate
+    if min_x < -EPS or max_x > plate_x + EPS or min_y < -EPS or max_y > plate_y + EPS:
+        return False
+    if nozzle == "right" and min_x < right_min - EPS:
+        return False
+    if nozzle == "left" and max_x > left_max + EPS:
+        return False
+    return True
 
-    lock "left" or "right" keeps a part on that nozzle when the filament cannot use the other
-    one (H2D TPU 85A is the right nozzle only). The footprint must already lie in that reach.
+
+def classify(item, corners, plate, left_max, right_min):
+    """Set nozzle and splitX for a part packed on the combined bed. Does not move the part.
+
+    Single-nozzle parts already have nozzle set by the queue that packed them. This is only
+    the cut: a footprint that spans both exclusive strips gets splitX in the shared band.
     """
     xs = [p[0] for p in corners]
     ys = [p[1] for p in corners]
@@ -83,12 +101,6 @@ def classify(item, corners, plate, left_max, right_min, lock=None):
     min_y, max_y = min(ys), max(ys)
     if min_x < -EPS or max_x > plate_x + EPS or min_y < -EPS or max_y > plate_y + EPS:
         item["nozzle"] = "unsplittable"
-        return item
-    if lock == "right":
-        item["nozzle"] = "unsplittable" if min_x < right_min - EPS else "right"
-        return item
-    if lock == "left":
-        item["nozzle"] = "unsplittable" if max_x > left_max + EPS else "left"
         return item
     spans_left = min_x < right_min - EPS
     spans_right = max_x > left_max + EPS

@@ -186,20 +186,18 @@ def overrides(slicer, preset, base, all_presets=None):
 
 NOZZLE_MAP = {"left": "1", "right": "2"}  # Bambu extruder 1 reaches the plate's left part, 2 (the master) the right
 
-# Studio shows this when a 0.4 H2D project leaves the right nozzle on Standard while a TPU 85A
-# slot is in it. The vendor preset's only extruder variant is "Direct Drive TPU High Flow",
-# and filament_printable is 2 (right nozzle). A hard filament on that same nozzle cannot
-# share the TPU hotend, so the cut below keeps Standard and says so.
+# Studio marks a 0.4 H2D TPU 85A slot when its nozzle is Standard. That preset's only
+# extruder variant is "Direct Drive TPU High Flow", and filament_printable is 2. A hard
+# filament on the same nozzle cannot share that hotend, so the nozzle stays Standard.
 TPU_HOTEND_NOTE = (
     "TPU 85A on the H2D 0.4 nozzle is valid only on the right nozzle with flow 'TPU High Flow'. "
-    "This file also puts a hard filament on that nozzle for the dual-nozzle cut, so the right nozzle "
-    "stays Standard and Studio marks the TPU slot. Print the TPU plate with the right nozzle set to "
-    "TPU High Flow, without that hard right-nozzle part."
+    "A hard filament is mapped to that same nozzle, so it stays Standard and Studio marks the TPU slot. "
+    "Leave the TPU slot as the only filament on that nozzle, then set the nozzle to TPU High Flow."
 )
 
 
 def _slot_nozzle(material, printable):
-    """1 or 2. A preset that lists only one nozzle wins; otherwise TPU is the right nozzle."""
+    """1 or 2. A printable list that names one nozzle wins. The name "TPU" is only the fallback."""
     vals = {str(v) for v in (printable or []) if str(v) in ("1", "2")}
     if len(vals) == 1:
         return next(iter(vals))
@@ -208,14 +206,38 @@ def _slot_nozzle(material, printable):
     return "1"
 
 
-def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, split_pair=False, printables=None):
+def filament_nozzle(fil):
+    """Nozzle for one settings slot. Same rule as the project filament map."""
+    fil = fil or {}
+    printable = fil.get("printable")
+    if printable is None:
+        printable = fil.get("filament_printable")
+    return _slot_nozzle(fil.get("material"), printable)
+
+
+def cut_extruders(filaments):
+    """1-based filament slots for the two halves of a cut, from filament_nozzle.
+
+    The first slot on each nozzle. A cut stores these in extruder, the same field
+    every other object uses for its filament slot.
+    """
+    left = right = None
+    for i, fil in enumerate(filaments or []):
+        side = filament_nozzle(fil)
+        if side == "2" and right is None:
+            right = i + 1
+        elif side == "1" and left is None:
+            left = i + 1
+    return left, right
+
+
+def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, printables=None):
     """Filament-to-nozzle map and purge matrix the way Bambu Studio sizes them.
 
     flush_volumes_matrix is one n×n block per nozzle (diagonal 0, that filament does not
     purge into itself). flush_multiplier has one entry per nozzle. A shorter matrix is what
     Studio rebuilds as zeros, which is the 'Partial purging volume set to 0' warning.
-    per_slot is the combined H2D row: TPU goes to the right nozzle, and a cut that stores
-    extruders 1 and 2 needs those two slots on opposite nozzles.
+    per_slot is the combined H2D row: each slot uses _slot_nozzle, the same rule the packer uses.
     """
     n = len(materials)
     nozzles = max(1, len(cfg.get("nozzle_diameter") or [1]))
@@ -224,15 +246,7 @@ def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, split_
         mapping = [NOZZLE_MAP[nozzle_side]] * n
         mode = "Manual"
     elif per_slot and nozzles >= 2:
-        mapping = []
-        for i, material in enumerate(materials):
-            if split_pair and i == 0:
-                mapping.append("1")
-            elif split_pair and i == 1:
-                mapping.append("2")
-            else:
-                printed = printables[i] if i < len(printables) else None
-                mapping.append(_slot_nozzle(material, printed))
+        mapping = [_slot_nozzle(material, printables[i] if i < len(printables) else None) for i, material in enumerate(materials)]
         mode = "Manual"
     else:
         mapping = ["1"] * n
@@ -257,7 +271,7 @@ def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, split_
     return note
 
 
-def project_config(slicer, machine, process, filaments, colours, nozzle_side=None, materials=None, per_slot=False, split_pair=False):
+def project_config(slicer, machine, process, filaments, colours, nozzle_side=None, materials=None, per_slot=False):
     """Full project_settings.config dict: machine + process flattened, filament vectors concatenated
     per slot (variant-expanded keys get `filament_self_index` like Bambu Studio writes).
     nozzle_side "left"/"right" pins every filament to that nozzle of a dual-nozzle printer."""
@@ -294,7 +308,7 @@ def project_config(slicer, machine, process, filaments, colours, nozzle_side=Non
                 "different_settings_to_system": [""] * (n + 2), "curr_bed_type": "Textured PEI Plate"})
     slot_materials = list(materials) if materials is not None else [(F.get("filament_type") or [""])[0] for F in Fs]
     printables = [F.get("filament_printable") or [] for F in Fs]
-    note = dual_nozzle_project(cfg, slot_materials, nozzle_side, per_slot, split_pair, printables)
+    note = dual_nozzle_project(cfg, slot_materials, nozzle_side, per_slot, printables)
     if note:
         cfg["_tpu_note"] = note
     return cfg
