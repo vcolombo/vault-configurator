@@ -164,9 +164,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [spoolStatus, setSpoolStatus] = useState("");
   const [presetStatus, setPresetStatus] = useState("");
   const stateRef = useRef<PlannerState | null>(null);
-  const bomRef = useRef<Bom | null>(null);
   stateRef.current = state;
-  bomRef.current = bom;
 
   useEffect(() => {
     applyTheme(theme);
@@ -285,14 +283,12 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           });
           if (cancel || !stateRef.current || stateRef.current.tab !== "plates" || signature(stateRef.current) !== requestSig) return;
           setPlan(result.plan);
-          let note = "";
           setState((prev) => {
             if (!prev) return prev;
-            const applied = applyPlanProgress(prev, requestSig, result.plan, bomRef.current);
-            note = applied.note;
+            const applied = applyPlanProgress(prev, requestSig, result.plan, null);
+            if (prev.tab === "plates" && signature(prev) === requestSig) setPlanNote(applied.note);
             return applied.state;
           });
-          setPlanNote(note);
         } catch (error) {
           if (!cancel) setExportStatus(error instanceof Error ? error.message : "Planning failed.");
         }
@@ -469,17 +465,21 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       previewPlates: async () => {
         const current = stateRef.current;
         if (!current) return;
+        const requestSig = signature(current);
         setExportStatus("Planning…");
         try {
           const result = await postJson<{ plan: Plan }>("/api/plan", { stack: current.stack, settings: current.settings, overrides: current.overrides });
-          setPlan(result.plan);
-          setExportFiles([]);
-          const hardware = (bom?.hardware || []).map((row) => ({ item: row.item, qty: Number(row.qty) }));
-          const assemble = (bom?.parts || []).map((part) => ({ key: `${part.group}|${part.name}`, qty: Number(part.qty) }));
-          const reconciled = reconcileProgress(current.progress, result.plan.fingerprint || "", result.plan.plates, hardware, assemble);
-          setPlanNote(reconciled.note || "");
-          setState((prev) => (prev ? { ...prev, progress: reconciled.progress } : prev));
-          setExportStatus("");
+          setState((prev) => {
+            if (!prev) return prev;
+            const applied = applyPlanProgress(prev, requestSig, result.plan, null);
+            if (prev.tab === "plates" && signature(prev) === requestSig) {
+              setPlan(result.plan);
+              setExportFiles([]);
+              setPlanNote(applied.note);
+            }
+            setExportStatus("");
+            return applied.state;
+          });
         } catch (error) {
           setExportStatus(error instanceof Error ? error.message : "Planning failed.");
         }

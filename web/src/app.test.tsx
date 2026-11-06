@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import { applyBomResult, signature } from "./store";
+import { applyBomResult, applyPlanProgress, signature } from "./store";
 import type { Meta, PlannerState } from "./types";
 
 const printers = [
@@ -194,6 +194,39 @@ test("a BOM result keeps an assemble check and a stale stack is dropped", () => 
   expect(kept.progress.assemble?.["L1|Box"]?.done).toBe(true);
   const edited = { ...prev, stack: { ...prev.stack, depth: 7 } };
   expect(applyBomResult(edited, requestSig, bom)).toBe(edited);
+});
+
+test("a plan keeps the part rows already on prev and drops a stale stack", () => {
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false, gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  const prev = {
+    tab: "plates",
+    fitTarget: "every",
+    fitOnly: false,
+    help: true,
+    merge: false,
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: {} },
+    settings: meta.defaults,
+    overrides: {},
+    tests: {},
+    projects: [],
+    activeProjectId: "",
+    progress: {
+      layoutKey: "layout",
+      plates: {},
+      hardware: { Screws: { qty: 4, done: true } },
+      assemble: { "L1|Box": { qty: 1, done: true } },
+    },
+  } as PlannerState;
+  const requestSig = signature(prev);
+  const plan = { plates: [], fingerprint: "layout", pieces: 0, placed: 0 };
+  const kept = applyPlanProgress(prev, requestSig, plan, null);
+  expect(kept.state.progress.assemble?.["L1|Box"]?.done).toBe(true);
+  expect(kept.state.progress.hardware?.Screws?.done).toBe(true);
+  const edited = { ...prev, stack: { ...prev.stack, depth: 7 } };
+  expect(applyPlanProgress(edited, requestSig, plan, null).state).toBe(edited);
 });
 
 test("opening Plates requests a plan without another stack edit", async () => {
