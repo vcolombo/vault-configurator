@@ -197,7 +197,8 @@ def test_server_hides_archive_path_and_rejects_open():
     ui = "\n".join(chunks)
     for text in (
         "Only offer choices that fit", "Compose your stack", "Settings", "Appearance",
-        "vault-theme", "Add layer", "All printers", "Show a sample plate",
+        "vault-theme", "Add layer", "All printers", "All printers dropdown in the header",
+        "Show a sample plate", "status-chip",
         "VAULT_ARCHIVE", "Unraid", "4 Assemble", "Light", "Dark", "System",
         "the first row is the top of the stack", "Top of the list is the top of the stack",
         "the bottom layer sets the width family", "The bottom layer sets the family",

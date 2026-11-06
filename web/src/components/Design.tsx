@@ -1,11 +1,22 @@
-import { scopeLabel } from "../../../planner.mjs";
+import { printerLabel } from "../../../planner.mjs";
 import { HELP } from "../help";
 import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, labeledChoices, layerTitle, patternName } from "../labels";
 import { facadeCatalog, heightCatalog, layerFitNotes, layoutCatalog } from "../stack";
 import { usePlanner } from "../store";
-import type { Layer } from "../types";
+import type { Layer, PlannerState } from "../types";
 import { Card, ChoiceSelect, Grip, Switch } from "./ui";
 import { Preview } from "./Preview";
+
+function footprintLine(state: PlannerState): string {
+  if (!state.stack.layers.length) return "Depth and roof stay available before the first layer.";
+  const target = state.fitTarget;
+  if (!target || target === "every" || target === "all") {
+    return "Fits every enabled printer — change this with the All printers dropdown in the header.";
+  }
+  const printer = state.settings.printers.find((row) => row.id === target);
+  const name = printerLabel(printer) || "the selected printer";
+  return `Fits ${name} — change this with the All printers dropdown in the header.`;
+}
 
 export function Design() {
   const store = usePlanner();
@@ -22,12 +33,7 @@ export function Design() {
     fitOnly: state.fitOnly,
     current: state.stack.roof?.type || "none",
   }, (value) => ROOF_LABEL[String(value)] || String(value));
-  const who = scopeLabel(bom?.judged);
-  const fitLine = !state.stack.layers.length
-    ? "Depth and roof stay available before the first layer."
-    : bom?.judged?.scope === "every"
-      ? "Fits every enabled printer — change this with the All printers dropdown in the header."
-      : `Choices are judged against ${who}.`;
+  const fitLine = footprintLine(state);
   const mods = state.stack.mods || {};
   const backbone = String(mods.backbone || "none");
   const pegboard = String(mods.pegboard || "none");
