@@ -326,8 +326,11 @@ def write_3mf(path, objects, plates, bed, title="", project=None):
             files[sub] = f'{head}<metadata name="BambuStudio:3mfVersion">1</metadata>\n<resources>\n<object id="{mesh_id}" p:UUID="{_uuid(mesh_id)}" type="model">{_mesh_xml(part["mesh"])}</object>\n</resources>\n<build/>\n</model>\n'
             rels.append(f'<Relationship Target="/{sub}" Id="rel-{mesh_id}" Type="{REL_MODEL}"/>')
         mesh_id_of[k] = stored
-    oid = len(objects)
+    # Instance ids have to start past every mesh id. A cut object has two meshes, so
+    # len(objects) collides with the last mesh and Studio drops or mis-places that instance.
+    oid = next_mesh - 1
     grid = printable_size(project, bed)
+    plates = [pl for pl in plates if pl.get("items")]
     for pi, plate in enumerate(plates):
         ox, oy = plate_origin(pi, len(plates), grid)
         bed_type = (project or {}).get("curr_bed_type") or "Textured PEI Plate"

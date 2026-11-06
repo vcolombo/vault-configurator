@@ -66,8 +66,12 @@ def fit_angle(size, edge, bed, left_width):
     return None
 
 
-def classify(item, corners, plate, left_max, right_min):
-    """Set nozzle and splitX from corners the planner already computed. Does not move the part."""
+def classify(item, corners, plate, left_max, right_min, lock=None):
+    """Set nozzle and splitX from corners the planner already computed. Does not move the part.
+
+    lock "left" or "right" keeps a part on that nozzle when the filament cannot use the other
+    one (H2D TPU 85A is the right nozzle only). The footprint must already lie in that reach.
+    """
     xs = [p[0] for p in corners]
     ys = [p[1] for p in corners]
     plate_x, plate_y = plate
@@ -79,6 +83,12 @@ def classify(item, corners, plate, left_max, right_min):
     min_y, max_y = min(ys), max(ys)
     if min_x < -EPS or max_x > plate_x + EPS or min_y < -EPS or max_y > plate_y + EPS:
         item["nozzle"] = "unsplittable"
+        return item
+    if lock == "right":
+        item["nozzle"] = "unsplittable" if min_x < right_min - EPS else "right"
+        return item
+    if lock == "left":
+        item["nozzle"] = "unsplittable" if max_x > left_max + EPS else "left"
         return item
     spans_left = min_x < right_min - EPS
     spans_right = max_x > left_max + EPS

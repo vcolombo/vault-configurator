@@ -186,8 +186,78 @@ def overrides(slicer, preset, base, all_presets=None):
 
 NOZZLE_MAP = {"left": "1", "right": "2"}  # Bambu extruder 1 reaches the plate's left part, 2 (the master) the right
 
+# Studio shows this when a 0.4 H2D project leaves the right nozzle on Standard while a TPU 85A
+# slot is in it. The vendor preset's only extruder variant is "Direct Drive TPU High Flow",
+# and filament_printable is 2 (right nozzle). A hard filament on that same nozzle cannot
+# share the TPU hotend, so the cut below keeps Standard and says so.
+TPU_HOTEND_NOTE = (
+    "TPU 85A on the H2D 0.4 nozzle is valid only on the right nozzle with flow 'TPU High Flow'. "
+    "This file also puts a hard filament on that nozzle for the dual-nozzle cut, so the right nozzle "
+    "stays Standard and Studio marks the TPU slot. Print the TPU plate with the right nozzle set to "
+    "TPU High Flow, without that hard right-nozzle part."
+)
 
-def project_config(slicer, machine, process, filaments, colours, nozzle_side=None):
+
+def _slot_nozzle(material, printable):
+    """1 or 2. A preset that lists only one nozzle wins; otherwise TPU is the right nozzle."""
+    vals = {str(v) for v in (printable or []) if str(v) in ("1", "2")}
+    if len(vals) == 1:
+        return next(iter(vals))
+    if (material or "").strip().upper() == "TPU":
+        return "2"
+    return "1"
+
+
+def dual_nozzle_project(cfg, materials, nozzle_side=None, per_slot=False, split_pair=False, printables=None):
+    """Filament-to-nozzle map and purge matrix the way Bambu Studio sizes them.
+
+    flush_volumes_matrix is one n×n block per nozzle (diagonal 0, that filament does not
+    purge into itself). flush_multiplier has one entry per nozzle. A shorter matrix is what
+    Studio rebuilds as zeros, which is the 'Partial purging volume set to 0' warning.
+    per_slot is the combined H2D row: TPU goes to the right nozzle, and a cut that stores
+    extruders 1 and 2 needs those two slots on opposite nozzles.
+    """
+    n = len(materials)
+    nozzles = max(1, len(cfg.get("nozzle_diameter") or [1]))
+    printables = list(printables or [])
+    if nozzle_side in NOZZLE_MAP:
+        mapping = [NOZZLE_MAP[nozzle_side]] * n
+        mode = "Manual"
+    elif per_slot and nozzles >= 2:
+        mapping = []
+        for i, material in enumerate(materials):
+            if split_pair and i == 0:
+                mapping.append("1")
+            elif split_pair and i == 1:
+                mapping.append("2")
+            else:
+                printed = printables[i] if i < len(printables) else None
+                mapping.append(_slot_nozzle(material, printed))
+        mode = "Manual"
+    else:
+        mapping = ["1"] * n
+        mode = "Auto For Flush"
+    volumes = ["Standard"] * nozzles
+    note = None
+    if per_slot and nozzles >= 2:
+        for nozzle_i in range(nozzles):
+            on = [materials[i] for i, side in enumerate(mapping) if int(side) - 1 == nozzle_i]
+            tpu = [m for m in on if (m or "").strip().upper() == "TPU"]
+            if tpu and len(tpu) == len(on):
+                volumes[nozzle_i] = "TPU High Flow"
+            elif tpu:
+                note = TPU_HOTEND_NOTE
+    block = ["0" if i == j else "140" for i in range(n) for j in range(n)]
+    cfg["filament_map"] = mapping
+    cfg["filament_map_mode"] = mode
+    cfg["nozzle_volume_type"] = volumes
+    cfg["flush_multiplier"] = ["1"] * nozzles
+    cfg["flush_volumes_matrix"] = block * nozzles
+    cfg["flush_volumes_vector"] = ["140"] * (2 * n)
+    return note
+
+
+def project_config(slicer, machine, process, filaments, colours, nozzle_side=None, materials=None, per_slot=False, split_pair=False):
     """Full project_settings.config dict: machine + process flattened, filament vectors concatenated
     per slot (variant-expanded keys get `filament_self_index` like Bambu Studio writes).
     nozzle_side "left"/"right" pins every filament to that nozzle of a dual-nozzle printer."""
@@ -221,9 +291,12 @@ def project_config(slicer, machine, process, filaments, colours, nozzle_side=Non
     cfg["default_filament_profile"] = M.get("default_filament_profile") or [filaments[0]]
     n = len(filaments)
     cfg.update({"name": "project_settings", "from": "project", "version": vendor_version(slicer),
-                "filament_map": [NOZZLE_MAP.get(nozzle_side, "1")] * n, "filament_map_mode": "Manual" if nozzle_side in NOZZLE_MAP else "Auto For Flush", "nozzle_volume_type": ["Standard"] * len(M.get("nozzle_diameter") or [1]),
-                "different_settings_to_system": [""] * (n + 2), "curr_bed_type": "Textured PEI Plate",
-                "flush_volumes_vector": ["140"] * (2 * n), "flush_volumes_matrix": ["0" if i == j else "140" for i in range(n) for j in range(n)]})
+                "different_settings_to_system": [""] * (n + 2), "curr_bed_type": "Textured PEI Plate"})
+    slot_materials = list(materials) if materials is not None else [(F.get("filament_type") or [""])[0] for F in Fs]
+    printables = [F.get("filament_printable") or [] for F in Fs]
+    note = dual_nozzle_project(cfg, slot_materials, nozzle_side, per_slot, split_pair, printables)
+    if note:
+        cfg["_tpu_note"] = note
     return cfg
 
 
@@ -281,6 +354,7 @@ if __name__ == "__main__":
     assert flatten(hf, load_all("bambu", "filament")).get("filament_type") == ["PETG"], hf  # Spoolman's PETG-HF: a PETG preset, never another material
     assert cfg["printable_height"] and len(cfg["filament_type"]) == n and len(cfg["filament_colour"]) == n and len(cfg["nozzle_diameter"]) == 2
     assert cfg["filament_self_index"][:1] == ["1"] and len(cfg["filament_self_index"]) == len(cfg["filament_extruder_variant"])
+    assert len(cfg["flush_volumes_matrix"]) == 2 * n * n and cfg["flush_multiplier"] == ["1", "1"]  # one n×n block per nozzle, or Studio fills the rest with 0
     right = project_config("bambu", "Bambu Lab H2C 0.4 nozzle", "0.20mm Standard @BBL H2C", [f1, f2], ["#AAAAAA", "#111111"], "right")
     assert right["filament_map"] == ["2", "2"] and right["filament_map_mode"] == "Manual" and cfg["filament_map_mode"] == "Auto For Flush"
     print("project keys:", len(cfg), "| filament_type", cfg["filament_type"], "| self_index", cfg["filament_self_index"])

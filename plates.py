@@ -374,18 +374,32 @@ def plan(parts, settings, stats_fn):
     plates = []
     for p in printers:
         mine = [it for it in items if it["printer"] == p["id"]]
-        queues = [(p["bed"], mine)]
+        # (bed, parts, x shift, nozzle lock). A shift moves a pack done in the left-nozzle
+        # rectangle onto the right nozzle (H2D right reach starts at x = 25).
+        queues = [(p["bed"], mine, 0.0, None)]
         if p.get("nozzleMode") == "h2d-split":
-            # Same axis-aligned, edge-aware test as fit_angle. One nozzle's rectangle, then the
-            # combined bed. Both groups use the packer below; classify decides the cut.
-            left_w, _right_min = split_reach(p)
-            one, wide = [], []
+            # Same axis-aligned, edge-aware test as fit_angle. TPU is packed in the right
+            # nozzle's rectangle: the 0.4 TPU 85A preset cannot print from the left nozzle.
+            # Anything that fits one nozzle but is not TPU stays on the left. Only a hard
+            # part that fits neither nozzle is cut across the combined bed.
+            left_w, right_min = split_reach(p)
+            one, right_parts, wide = [], [], []
             for it in mine:
-                if h2d_split.single_nozzle_angle([it["w"], it["d"], it["h"]], edge, p["bed"], left_w) is not None:
+                fits_one = h2d_split.single_nozzle_angle([it["w"], it["d"], it["h"]], edge, p["bed"], left_w) is not None
+                if (_slot_material(s, it) or "").strip().upper() == "TPU":
+                    if fits_one:
+                        right_parts.append(it)
+                    else:
+                        unplaceable.append({"name": it["part"], "size": [it["w"], it["d"], it["h"]], "qty": 1, "group": it["group"],
+                                            "reason": "TPU prints on the right nozzle only, and this part does not fit there"})
+                    continue
+                if fits_one:
                     one.append(it)
                 else:
                     wide.append(it)
-            queues = [([left_w, p["bed"][1]], one), (list(p["bed"]), wide)]
+            queues = [([left_w, p["bed"][1]], one, 0.0, None),
+                      ([left_w, p["bed"][1]], right_parts, float(right_min), "right"),
+                      (list(p["bed"]), wide, 0.0, None)]
 
         def keyf(it):
             if s["groupBy"] == "size":
@@ -393,7 +407,7 @@ def plan(parts, settings, stats_fn):
                 band = "large" if max(it["w"], it["d"]) > 0.5 * min(bed) else "small"
                 return (band, it["slot"])
             return (it["group"] if s["groupBy"] == "module" else "", it["slot"])
-        for pack_bed, group in queues:
+        for pack_bed, group, shift, lock in queues:
             for key in sorted({keyf(it) for it in group}, key=str):
                 bucket = sorted([it for it in group if keyf(it) == key], key=lambda it: -(it["w"] * it["d"]))
                 # oversize parts that only fit across the diagonal: same size + angle share a plate, side by side
@@ -417,7 +431,14 @@ def plan(parts, settings, stats_fn):
                             pk.place_centred(it, int(fits([it["w"], it["d"], it["h"]], p, edge) or 0))
                         packers.append(pk)
                 for pk in packers:
-                    plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": expand(pk.items), "fill": round(pk.fill(), 2),
+                    packed = expand(pk.items)
+                    if shift:
+                        for it in packed:
+                            it["x"] = round(it["x"] + shift, 2)
+                    if lock:
+                        for it in packed:
+                            it["lock"] = lock
+                    plates.append({"printer": p["id"], "group": key[0], "slots": sorted({i["slot"] for i in pk.items}), "items": packed, "fill": round(pk.fill(), 2),
                                    "bed": list(p["bed"]), "origin": list(p.get("origin") or (0, 0)),
                                    **({"diagonal": True} if getattr(pk, "diagonal", False) else {})})
     for n, pl in enumerate(plates):
@@ -435,7 +456,7 @@ def plan(parts, settings, stats_fn):
         for it in pl["items"]:
             exact = list(footprint_corners(it))
             if reach:
-                h2d_split.classify(it, exact, owner["bed"], reach[0], reach[1])
+                h2d_split.classify(it, exact, owner["bed"], reach[0], reach[1], it.pop("lock", None))
             it["corners"] = [[round(x, 2), round(y, 2)] for x, y in exact]
     result["fingerprint"] = plate_fingerprint(plates)
     return result
@@ -457,7 +478,15 @@ def filament_presets(s, p):
             for f in s["filaments"]]
 
 
-def project_for(s, p):
+def _slot_material(s, it):
+    fils = s.get("filaments") or []
+    slot = int(it.get("slot") or 0)
+    if 0 <= slot < len(fils):
+        return fils[slot].get("material") or ""
+    return ""
+
+
+def project_for(s, p, split_pair=False):
     """project_settings.config for one printer: its machine + default process preset and one filament
     preset per slot (filament_presets). None when unknown."""
     import presets as presets_mod
@@ -466,8 +495,10 @@ def project_for(s, p):
     machine = p.get("machine") or f"{p.get('profile', '')} {p.get('nozzle', '')} nozzle".strip()
     names = filament_presets(s, p)
     colours = [(f.get("color") or "#808080").upper() for f in s["filaments"]]
+    materials = [f.get("material") or "PETG" for f in s["filaments"]]
     try:
-        return presets_mod.project_config(p["slicer"], machine, p["preset"], names, colours, p.get("nozzleSide")), names
+        return presets_mod.project_config(p["slicer"], machine, p["preset"], names, colours, p.get("nozzleSide"),
+                                          materials, p.get("nozzleMode") == "h2d-split", split_pair), names
     except ValueError as e:
         return {"_error": str(e)}, names
 
@@ -525,27 +556,33 @@ def export(plan_result, settings, out_dir, root, stats_fn, stack_name="vault", s
                                     "extruder": int(s["roles"].get(it["role"], 0)) + 1, "config": cfg})
                     done += 1
                 items.append((index[key], it["x"] + ox, it["y"] + oy, it["rot"]))
-            plates.append({"name": pl["name"], "items": items})
+            if items:
+                plates.append({"name": pl["name"], "items": items})
         pname = re.sub(r"[^A-Za-z0-9]+", "-", p["name"]).strip("-")
         path = os.path.join(out_dir, f"{stack_name}{suffix}_{pname}.3mf")
         progress(100 * done / total, f"{p['name']}: writing {os.path.basename(path)} ({len(plates)} plates)")
         split_file = any(obj.get("parts") for obj in objects)
-        project, fil_names = (None, []) if split_file else project_for(s, p)
-        warn = None
-        if split_file:
-            # A normal project config pins every filament to one nozzle. That would undo the cut.
-            warn = h2d_split.MANUAL_STEPS
-        elif project:
-            warn = project.pop("_error", None)
-        else:
+        project, fil_names = project_for(s, p, split_pair=split_file)
+        warn = h2d_split.MANUAL_STEPS if split_file else None
+        note = None
+        if project:
+            err = project.pop("_error", None)
+            note = project.pop("_tpu_note", None)
+            if not project:
+                project = None
+            if err:
+                warn = (warn + " " if warn else "") + err
+        elif not split_file:
             warn = "no slicer preset chosen for this printer; opened file keeps the slicer's current presets"
+        if note:
+            warn = (warn + " " if warn else "") + note
         if warn_parts:
             warn = (warn + " " if warn else "") + "Not exported, the cut could not be closed or the part is over 350 mm: " + ", ".join(warn_parts)
         if not objects:
             written.append({"file": path, "printer": p["name"], "plates": 0, "items": 0, "overrides": 0, "filaments": [],
                             "warning": warn, "outside": [], "seconds": round(time.time() - t, 1)})
             continue
-        mesh.write_3mf(path, objects, plates, full_bed, f"{stack_name}{suffix} · {p['name']}", None if split_file else (project if project else None))
+        mesh.write_3mf(path, objects, plates, full_bed, f"{stack_name}{suffix} · {p['name']}", project if project else None)
         progress(100 * done / total, f"{p['name']}: checking every piece is on its plate")
         outside = mesh.verify_3mf(path, full_bed, reach=(ox, oy, *p["bed"]))  # read back the way the slicer will
         if outside:
