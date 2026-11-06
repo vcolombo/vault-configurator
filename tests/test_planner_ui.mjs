@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor } from "../planner.mjs";
+import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY } from "../planner.mjs";
 
 const plate = { printer: "u1", slots: [0], items: [{ part: "Guide", x: 1, y: 2, rot: 0 }] };
 const key = plateKey(plate);
@@ -147,5 +147,22 @@ const roof = catalogChoicesFor("roof", { choices: null, catalog: roofs, fitOnly:
 assert.deepEqual(roof.options.map((option) => option.value), roofs);
 assert.equal(roof.options.find((option) => option.value === "none").selected, true);
 assert.ok(roof.options.every((option) => !option.disabled));
+
+assert.equal(printerLabel({ name: "U1", profile: "Snapmaker U1" }), "U1");
+assert.equal(printerLabel({ name: "Snapmaker U1", profile: "Snapmaker U1" }), "Snapmaker U1");
+assert.equal(printerLabel({ name: "Bambu Lab H2D · left nozzle" }), "Bambu Lab H2D · left nozzle");
+assert.equal(printerLabel({ profile: "Snapmaker U1" }), "");
+assert.equal(spoolLabel({ name: "Charcoal", material: "PLA" }), "Charcoal · PLA");
+assert.equal(spoolLabel({ name: "Silver Grey", material: "TPU" }), "Silver Grey · TPU");
+assert.equal(spoolLabel({ name: "Cream", material: "" }), "Cream");
+assert.equal(THEME_STORAGE_KEY, "vault-theme");
+assert.equal(normalizeTheme(null), "system");
+assert.equal(normalizeTheme("nope"), "system");
+assert.equal(normalizeTheme("light"), "light");
+assert.equal(themeIsDark("dark", false), true);
+assert.equal(themeIsDark("light", true), false);
+assert.equal(themeIsDark("system", true), true);
+assert.equal(themeIsDark("system", false), false);
+assert.equal(themeIsDark(undefined, true), true);
 
 console.log("test_planner_ui ok");

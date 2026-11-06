@@ -1,5 +1,33 @@
 /** Pure helpers for saved progress, plate keys, and the depth/roof selects. No DOM, no network. */
 
+export const THEME_STORAGE_KEY = "vault-theme";
+
+/** light | dark | system. Anything else, including a missing value, is System. */
+export function normalizeTheme(value) {
+  return value === "light" || value === "dark" || value === "system" ? value : "system";
+}
+
+/** Whether the page should use the dark palette. System follows the OS flag passed in. */
+export function themeIsDark(preference, prefersDark) {
+  const mode = normalizeTheme(preference);
+  if (mode === "dark") return true;
+  if (mode === "light") return false;
+  return !!prefersDark;
+}
+
+/** The shop Name field, unchanged. Profiles and slicer preset ids are not display names. */
+export function printerLabel(printer) {
+  if (!printer || printer.name == null || printer.name === "") return "";
+  return String(printer.name);
+}
+
+/** Shelf stock as shown on a Parts role dropdown: nickname, then material. */
+export function spoolLabel(filament) {
+  const name = filament && filament.name ? String(filament.name) : "Unnamed";
+  const material = filament && filament.material ? String(filament.material) : "";
+  return material ? `${name} · ${material}` : name;
+}
+
 export function plateKey(plate) {
   const items = (plate.items || [])
     .map((item) => `${item.part}@${item.x},${item.y},${item.rot}`)
