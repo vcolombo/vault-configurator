@@ -15,8 +15,8 @@
 </script>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <style>
-:root{color-scheme:light;--bg:#f7f6f3;--panel:#fffcf8;--panel2:#f3f2ee;--line:#e4e2dc;--text:#1c1c1f;--muted:#5e5e66;--accent:#1f6f6c;--ok:#1d7a45;--warn:#8a5a12;--bad:#a33b3b;--bed:#e6e7ea;--teal:#2f6f6c;--on-solid:#f7f6f3;--export-on:#e7f3f2;--export-ink:#1d4f4c;--onboard:#f8f1e4}
-html.dark{color-scheme:dark;--bg:#121314;--panel:#1c1e21;--panel2:#26282c;--line:#3a3d42;--text:#eceae6;--muted:#a7a79f;--accent:#8fd0cc;--ok:#8fd19e;--warn:#f0b35b;--bad:#f29b9b;--bed:#e6e7ea;--teal:#8fd0cc;--on-solid:#141516;--export-on:#1a3332;--export-ink:#d7f3f1;--onboard:#2a241c}
+:root{color-scheme:light;--bg:#f7f6f3;--panel:#fffcf8;--panel2:#f3f2ee;--line:#e4e2dc;--text:#1c1c1f;--muted:#5e5e66;--accent:#1f6f6c;--ok:#1d7a45;--warn:#8a5a12;--bad:#a33b3b;--bed:#e6e7ea;--teal:#2f6f6c;--on-solid:#f7f6f3;--export-on:#e7f3f2;--export-ink:#1d4f4c;--onboard:#f8f1e4;--preview:#f3f2ee;--preview-stroke:#1c1d20;--preview-ink:#3c3e42}
+html.dark{color-scheme:dark;--bg:#121314;--panel:#1c1e21;--panel2:#26282c;--line:#3a3d42;--text:#eceae6;--muted:#a7a79f;--accent:#8fd0cc;--ok:#8fd19e;--warn:#f0b35b;--bad:#f29b9b;--bed:#e6e7ea;--teal:#8fd0cc;--on-solid:#141516;--export-on:#1a3332;--export-ink:#d7f3f1;--onboard:#2a241c;--preview:#1b2838;--preview-stroke:#f4f1ea;--preview-ink:#d9d6cf}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
 header{position:sticky;top:0;z-index:40;padding:12px 22px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:saturate(1.2) blur(8px);display:flex;gap:14px 22px;align-items:center;flex-wrap:wrap}
@@ -75,8 +75,8 @@ tr.sub td{padding-left:22px;color:var(--muted)}
 .swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:4px;border:1px solid #555}
 textarea{width:100%;height:60px}
 details summary{cursor:pointer;color:var(--muted)}
-#schematic svg{width:100%;height:auto;background:#1a1c1e;border-radius:8px}
-.svgtxt{font:30px system-ui;fill:#b5b5ae}
+#schematic svg{width:100%;height:auto;background:var(--preview);color:var(--preview-stroke);border-radius:8px}
+.svgtxt{font:30px system-ui;fill:var(--preview-ink)}
 .progress{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin:6px 0}
 .progress div{height:100%;background:var(--accent);width:0;transition:width .3s}
 #pop{position:fixed;z-index:50;max-width:420px;max-height:85vh;overflow:auto;background:#2a2d30;color:#eceae6;border:1px solid #555;border-radius:8px;padding:10px 12px;font-size:13px;box-shadow:0 8px 30px #0008;display:none}
@@ -584,7 +584,8 @@ function drawSchematic(){const st=state.stack,box=$('#schematic');box.replaceChi
  const vw=leftPad+Wpx+rightPad,vh=top+stackPx+bottom;
  const root=svg('svg',{viewBox:`0 0 ${vw} ${vh}`}),g=svg('g',{transform:`translate(${leftPad},${top})`});root.append(g);
  const defs=svg('defs');defs.innerHTML=`<linearGradient id="gm" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d9dcdf"/><stop offset="1" stop-color="#aeb2b6"/></linearGradient><linearGradient id="gd" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#4a4d50"/><stop offset="1" stop-color="#2b2d2f"/></linearGradient><linearGradient id="gt" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#1f2123"/><stop offset=".5" stop-color="#3b3e41"/><stop offset="1" stop-color="#1f2123"/></linearGradient><pattern id="peg" width="24" height="24" patternUnits="userSpaceOnUse"><rect width="24" height="24" fill="#1a1c1e" fill-opacity=".45"/><circle cx="12" cy="12" r="4" fill="#e0a96d" fill-opacity=".7"/></pattern>`;root.append(defs);
- const R=(x,y,w,h,fill,extra={})=>g.append(svg('rect',{x,y,width:w,height:h,fill,stroke:'#55595d','stroke-width':1,rx:4,...extra}));
+ const ink='currentColor',edge='3';
+ const R=(x,y,w,h,fill,extra={})=>g.append(svg('rect',{x,y,width:w,height:h,fill,stroke:ink,'stroke-width':edge,rx:4,...extra}));
  const T=(x,y,t,anchor='start')=>g.append(svg('text',{x,y,'text-anchor':anchor,class:'svgtxt'},t));
  const LX=Wpx+(wheelR?WHEEL_OUT+WHEEL_W:0)*px+36;
  const floorY=stackPx;
@@ -592,14 +593,15 @@ function drawSchematic(){const st=state.stack,box=$('#schematic');box.replaceChi
  if(baseH){R(0,floorY+gap,Wpx,baseH*px,'url(#gm)');legend.push([floorY+gap+baseH*px/2,[`${fam}${st.depth} base`]])}
  if(feetH)R(Wpx/2-FEET_W/2*px,floorY+gap+baseH*px,FEET_W*px,feetH*px,'url(#gd)');
  if(wheelR){const cy=floorY+gap+baseH*px/2,wy=cy-WHEEL_D/2*px;
-  [[-(WHEEL_OUT+WHEEL_W)*px,-WHEEL_OUT*px,0],[Wpx+WHEEL_OUT*px,Wpx+(WHEEL_OUT+WHEEL_W)*px,Wpx]].forEach(([x0,x1,bx])=>{g.append(svg('line',{x1:bx,y1:cy,x2:(x0+x1)/2,y2:cy,stroke:'#8e9296','stroke-width':16*px}));
-   R(x0,wy,x1-x0,WHEEL_D*px,'url(#gt)',{rx:WHEEL_W*px/2,stroke:'#111'});for(let k=1;k<10;k++)g.append(svg('line',{x1:x0+4,y1:wy+k*WHEEL_D*px/10,x2:x1-4,y2:wy+k*WHEEL_D*px/10,stroke:'#55595d','stroke-width':2}))});
+  [[-(WHEEL_OUT+WHEEL_W)*px,-WHEEL_OUT*px,0],[Wpx+WHEEL_OUT*px,Wpx+(WHEEL_OUT+WHEEL_W)*px,Wpx]].forEach(([x0,x1,bx])=>{g.append(svg('line',{x1:bx,y1:cy,x2:(x0+x1)/2,y2:cy,stroke:ink,'stroke-width':16*px}));
+   R(x0,wy,x1-x0,WHEEL_D*px,'url(#gt)',{rx:WHEEL_W*px/2,stroke:ink});for(let k=1;k<10;k++)g.append(svg('line',{x1:x0+4,y1:wy+k*WHEEL_D*px/10,x2:x1-4,y2:wy+k*WHEEL_D*px/10,stroke:ink,'stroke-width':2}))});
   legend.push([cy+WHEEL_D/2*px-20,['wheels Ø160, TPU tyres, M16 axle']])}
  let y=0;const rowY=[];
  [...rows].reverse().forEach((r,ri)=>{const i=rows.length-1-ri,l=r.layer,layoutW=r.colW.reduce((a,b)=>a+b,0);let x=(Wpx-layoutW)/2;
   r.cols.forEach((parts,c)=>{let py=y;parts.forEach(p=>{const cw=r.colW[c],v=p.crop;const fw=v?v.width:cw,fh=v?v.height:CAL.vertical[p.unit].height,fx=x+(cw-fw)/2;
-    if(v){const crop=svg('svg',{x:fx,y:py,width:fw,height:fh,viewBox:`${v.x} ${v.y} ${fw} ${fh}`,overflow:'hidden'});const img=svg('image',{href:v.src,width:1600,height:1200});img.addEventListener('error',()=>{crop.replaceChildren();crop.append(svg('rect',{x:v.x,y:v.y,width:fw,height:fh,fill:'#c9ccd0',stroke:'#55595d'}))});crop.append(img);g.append(crop)}
+    if(v){const crop=svg('svg',{x:fx,y:py,width:fw,height:fh,viewBox:`${v.x} ${v.y} ${fw} ${fh}`,overflow:'hidden'});const img=svg('image',{href:v.src,width:1600,height:1200});img.addEventListener('error',()=>{crop.replaceChildren();crop.append(svg('rect',{x:v.x,y:v.y,width:fw,height:fh,fill:'#c9ccd0',stroke:ink,'stroke-width':edge}))});crop.append(img);g.append(crop)}
     else R(fx,py,fw,fh,'#c9ccd0');
+    g.append(svg('rect',{x:fx,y:py,width:fw,height:fh,fill:'none',stroke:ink,'stroke-width':edge,class:'preview-outline'}));
     if(l.type==='Drawers'&&l.key!=='key'){const cx=fx+fw/2,cy=py+fh-65;g.append(svg('circle',{cx,cy,r:48,fill:'#a8acaf',stroke:l.key==='hidden'?'#3b3e41':'none','stroke-width':3}));if(l.key==='hidden')g.append(svg('rect',{x:cx-30,y:cy-9,width:60,height:18,rx:9,fill:'#8e9296',stroke:'#3b3e41','stroke-width':2}))}
     py+=fh});x+=r.colW[c]});
   rowY[i]={y,h:r.h};
@@ -608,21 +610,21 @@ function drawSchematic(){const st=state.stack,box=$('#schematic');box.replaceChi
   const detail=['module','box','facade'].map(k=>parts.filter(p=>p.kind===k).map(p=>`${p.qty}× ${short(p.name)}`).join(', ')).filter(Boolean);
   if(l.type==='Drawers'&&l.key!=='key')detail.push(l.key==='hidden'?'hidden key (flush, drawn as a disc)':'no lock (drawn as a plain disc)');
   legend.push([y+r.h/2,[`Layer ${i+1} · ${LAYOUT_LABEL[l.layout]} ${st.depth} · ${l.height}U ${l.type.toLowerCase()}`,...detail]]);
-  g.append(svg('line',{x1:Wpx+4,y1:y+r.h/2,x2:LX-10,y2:y+r.h/2,stroke:'#55595d','stroke-dasharray':'6 6'}));
+  g.append(svg('line',{x1:Wpx+4,y1:y+r.h/2,x2:LX-10,y2:y+r.h/2,stroke:ink,'stroke-dasharray':'6 6'}));
   y+=r.h+gap});
  if(roofH){const ry=-gap-roofH*px;if(roof.type==='heavyweight'){R(0,ry,Wpx*0.3,roofH*px,'url(#gm)');R(Wpx*0.7,ry,Wpx*0.3,roofH*px,'url(#gm)');R(Wpx*0.3,ry+roofH*px-12*px,Wpx*0.4,12*px,'url(#gd)')}
-  else{R(0,ry,Wpx,roofH*px,roof.type==='bowl'?'#d6d8db':'url(#gm)');if(roof.type==='grid'){for(let gx=42;gx<W;gx+=42)g.append(svg('line',{x1:gx*px,y1:ry,x2:gx*px,y2:ry+roofH*px,stroke:'#8c9094'}));if(roof.topHandle!==false)R(Wpx/2-HANDLE_W/2*px,ry-HANDLE_H*px,HANDLE_W*px,HANDLE_H*px,'url(#gd)',{rx:12})}}
+  else{R(0,ry,Wpx,roofH*px,roof.type==='bowl'?'#d6d8db':'url(#gm)');if(roof.type==='grid'){for(let gx=42;gx<W;gx+=42)g.append(svg('line',{x1:gx*px,y1:ry,x2:gx*px,y2:ry+roofH*px,stroke:ink}));if(roof.topHandle!==false)R(Wpx/2-HANDLE_W/2*px,ry-HANDLE_H*px,HANDLE_W*px,HANDLE_H*px,'url(#gd)',{rx:12})}}
   legend.push([ry+roofH*px/2,[{grid:'grid roof'+(roof.topHandle!==false?' + top handle':''),table:'table roof',bowl:'bowl roof',undertable:'under-table roof',heavyweight:'heavyweight roof'}[roof.type]]])}
- if(casters){const cy=floorY+gap+baseH*px+feetH*px+30*px;[0.15,0.85].forEach(k=>{g.append(svg('line',{x1:W*k*px,y1:cy-30*px,x2:W*k*px,y2:cy,stroke:'#8e9296','stroke-width':6}));g.append(svg('circle',{cx:W*k*px,cy:cy,r:25*px,fill:'url(#gt)',stroke:'#111'}))});legend.push([cy,['4 casters, M8 (hardware)']])}
+ if(casters){const cy=floorY+gap+baseH*px+feetH*px+30*px;[0.15,0.85].forEach(k=>{g.append(svg('line',{x1:W*k*px,y1:cy-30*px,x2:W*k*px,y2:cy,stroke:ink,'stroke-width':6}));g.append(svg('circle',{cx:W*k*px,cy:cy,r:25*px,fill:'url(#gt)',stroke:ink}))});legend.push([cy,['4 casters, M8 (hardware)']])}
  const bb=m.backbone&&m.backbone!=='none';
  if(bb&&m.pullout){const hy=-(handleH+roofH+CAL.gapMm)*px;R(-14*px,hy,8*px,handleH*px,'#9a9ea2');R(Wpx+6*px,hy,8*px,handleH*px,'#9a9ea2');R(-14*px,hy,Wpx+28*px,12*px,'url(#gd)',{rx:10});legend.push([hy+6,['pull-out handle, M16 rods (on the backbone)']])}
  // BACK view: everything bolted to the rear of the modules, drawn as a second elevation to the right
  const backMods=[bb&&`backbone (${m.backbone})`,bb&&m.stationary&&'stationary handle',bb&&m.connectors&&'module connectors',m.pegboard&&m.pegboard!=='none'&&`${m.pegboard==='ikea'?'IKEA Skadis':'USSA'} pegboards`,m.wallmount&&'wall mounts'].filter(Boolean);
  if(backMods.length){const BX=LX+700;const b=svg('g',{transform:`translate(${BX},0)`});g.append(b);
-  const BR=(x,y,w,h,fill,extra={})=>b.append(svg('rect',{x,y,width:w,height:h,fill,stroke:'#55595d','stroke-width':1,rx:3,...extra}));
+  const BR=(x,y,w,h,fill,extra={})=>b.append(svg('rect',{x,y,width:w,height:h,fill,stroke:ink,'stroke-width':edge,rx:3,...extra}));
   b.append(svg('text',{x:0,y:-14,class:'svgtxt',fill:'#e0a96d'},'BACK (what is bolted on the rear)'));
-  rowY.forEach(r=>BR(0,r.y,Wpx,r.h,'#2c2f32',{stroke:'#6a6e72'}));
-  if(roofH)BR(0,-gap-roofH*px,Wpx,roofH*px,'#2c2f32',{stroke:'#6a6e72'});if(baseH)BR(0,floorY+gap,Wpx,baseH*px,'#2c2f32',{stroke:'#6a6e72'});
+  rowY.forEach(r=>BR(0,r.y,Wpx,r.h,'#2c2f32',{stroke:ink}));
+  if(roofH)BR(0,-gap-roofH*px,Wpx,roofH*px,'#2c2f32',{stroke:ink});if(baseH)BR(0,floorY+gap,Wpx,baseH*px,'#2c2f32',{stroke:ink});
   rowY.forEach((r,i)=>{const l=state.stack.layers[i],hU=Math.min(l.height,2),boardH=(hU===1?47:99)*px;const n=l.height===4?2:1;
    for(let k=0;k<n;k++){const y0=r.y+(r.h-n*boardH-(n-1)*6)/2+k*(boardH+6);
     if(bb){if(m.backbone==='wide')BR(0,y0,Wpx,boardH,'url(#gd)');else [0.08,0.72].forEach(f=>BR(Wpx*f,y0,Wpx*0.2,boardH,'url(#gd)'));
