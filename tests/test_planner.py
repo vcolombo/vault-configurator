@@ -212,7 +212,7 @@ def test_server_hides_archive_path_and_rejects_open():
         "Top of the list is the top of the stack", "the first row is the top of the stack",
         "the bottom layer sets the width family", "All printers dropdown in the header",
         "Just what's on the shelf", 'aria-label="Theme"', 'data-theme="light"', 'data-theme="dark"',
-        'data-theme="system"', "loadPlannerState", "defaultPlannerState",
+        'data-theme="system"', "loadPlannerState", "defaultPlannerState", "footprintLine",
     ):
         assert text in classic, text
     for banned in ("Step 1 · Printers", "Step 2 · Filaments", "bottom-up", "first layer is the top", 'data-tab="shop"', "#101214", "shortName", "replace(/^Snapmaker", '<select id="theme"', "Manage shop", "material||'PETG'"):
