@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY } from "../planner.mjs";
+import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, legalExportMode, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY } from "../planner.mjs";
 
 const plate = { printer: "u1", slots: [0], items: [{ part: "Guide", x: 1, y: 2, rot: 0 }] };
 const key = plateKey(plate);
@@ -218,5 +218,32 @@ assert.deepEqual(savedShop.printers[0].bed, [270, 270]);
 assert.equal(savedShop.printers[0].forExport, undefined);
 assert.equal(savedShop.printers[1].name, "Shop P1S");
 assert.equal(shopDefaults.filaments[0].name, "Charcoal");
+
+const aimed = {
+  mode: "p1s",
+  printers: [
+    { id: "u1", enabled: true, forExport: true },
+    { id: "p1s", enabled: false, forExport: true },
+  ],
+};
+assert.equal(legalExportMode(aimed), "both");
+assert.equal(aimed.mode, "both");
+const tickedOff = {
+  mode: "u1",
+  printers: [
+    { id: "u1", enabled: true, forExport: false },
+    { id: "p1s", enabled: true },
+  ],
+};
+assert.equal(legalExportMode(tickedOff), "both");
+const kept = {
+  mode: "u1",
+  printers: [
+    { id: "u1", enabled: true },
+    { id: "p1s", enabled: true, forExport: false },
+  ],
+};
+assert.equal(legalExportMode(kept), "u1");
+assert.equal(legalExportMode({ mode: "both", printers: [] }), "both");
 
 console.log("test_planner_ui ok");

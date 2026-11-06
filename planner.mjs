@@ -15,6 +15,17 @@ export function themeIsDark(preference, prefersDark) {
   return !!prefersDark;
 }
 
+/**
+ * `both`, or one id that is enabled and ticked for export. Anything else becomes `both`.
+ * A missing `forExport` counts as ticked. This writes the settings object; it does not read the page.
+ */
+export function legalExportMode(settings) {
+  if (!settings) return "both";
+  const live = (settings.printers || []).filter((printer) => printer.enabled !== false && printer.forExport !== false);
+  if (settings.mode !== "both" && !live.some((printer) => printer.id === settings.mode)) settings.mode = "both";
+  return settings.mode;
+}
+
 /** The shop Name field, unchanged. Profiles and slicer preset ids are not display names. */
 export function printerLabel(printer) {
   if (!printer || printer.name == null || printer.name === "") return "";
