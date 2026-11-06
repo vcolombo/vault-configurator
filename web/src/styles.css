@@ -416,11 +416,6 @@
     inset-inline-start: calc(100% - 1.05rem - 2px);
   }
 
-  /* Stay in normal flow above #help. A sticky card pins over that section while the page scrolls. */
-  .preview-card {
-    position: static;
-  }
-
   .preview-meta {
     color: var(--muted-foreground);
     font-size: 0.8rem;
