@@ -110,68 +110,54 @@ export function decorateChoices(entries, filterOn) {
   return { items, warning };
 }
 
-export const DEPTHS = [3, 4, 5, 6, 7];
-export const ROOFS = ["none", "grid", "table", "bowl", "undertable", "heavyweight"];
-export const DEFAULT_DEPTH = 5;
-
 export function depthLabel(depth) {
   const n = Number(depth);
   return `${n} · ${(156.1 + (n - 3) * 42).toFixed(1)} mm`;
 }
 
-export function clampDepth(raw, fallback = DEFAULT_DEPTH) {
-  const n = Number(raw);
-  if (DEPTHS.includes(n)) return n;
-  const fb = Number(fallback);
-  return DEPTHS.includes(fb) ? fb : DEFAULT_DEPTH;
+function listed(list, prefer) {
+  const found = list.find((value) => String(value) === String(prefer));
+  return found !== undefined ? found : list[0];
 }
 
-export function clampRoof(raw, fallback = "none") {
-  if (ROOFS.includes(raw)) return raw;
-  if (ROOFS.includes(fallback)) return fallback;
-  return "none";
+/** Replace a depth or roof that is not in the meta catalog. Called when a stack is loaded. */
+export function repairStackCatalog(stack, depths, roofs) {
+  if (!stack) return stack;
+  const depthList = Array.isArray(depths) ? depths : [];
+  const roofList = Array.isArray(roofs) ? roofs : [];
+  if (depthList.length && !depthList.some((value) => String(value) === String(stack.depth))) stack.depth = listed(depthList, 5);
+  if (!stack.roof || typeof stack.roof !== "object") stack.roof = { type: roofList.length ? listed(roofList, "none") : "none", topHandle: true };
+  else if (roofList.length && !roofList.includes(stack.roof.type)) stack.roof.type = listed(roofList, "none");
+  return stack;
 }
 
-function staticCatalog(name) {
-  if (name === "depth") return DEPTHS.map((value) => ({ value }));
-  if (name === "roof") return ROOFS.map((value) => ({ value }));
-  return [];
-}
-
-function catalogSelectOptions(name, fromBom, current, filterOn) {
-  const selected = name === "depth" ? clampDepth(current) : clampRoof(current);
-  const source = Array.isArray(fromBom) && fromBom.length ? fromBom : staticCatalog(name);
+/**
+ * Options for one Design select. A non-empty BOM choice list wins; otherwise `catalog` is the meta list.
+ * Fit flags mark or disable. They do not drop values.
+ */
+export function catalogChoicesFor(name, spec) {
+  const choices = spec && spec.choices;
+  const fromBom = choices && choices[name];
+  const catalog = Array.isArray(spec && spec.catalog) ? spec.catalog : [];
+  const source = Array.isArray(fromBom) && fromBom.length ? fromBom : catalog.map((value) => ({ value }));
+  const current = spec ? spec.current : undefined;
   const entries = source.map((entry) => ({
     ...entry,
-    current: String(entry.value) === String(selected),
+    current: String(entry.value) === String(current),
   }));
   const judged = entries.some((entry) => Object.prototype.hasOwnProperty.call(entry, "fits"));
-  const decorated = judged && filterOn ? decorateChoices(entries, true) : null;
+  const decorated = judged && spec && spec.fitOnly ? decorateChoices(entries, true) : null;
   const rows = decorated ? decorated.items : entries;
   return {
-    selected,
     warning: decorated ? decorated.warning : "",
     options: rows.map((entry) => ({
       value: entry.value,
       disabled: !!(decorated && entry.disabled),
-      selected: String(entry.value) === String(selected),
+      selected: String(entry.value) === String(current),
       mark: (decorated && entry.mark) || "",
       reason: entry.reason || "",
     })),
   };
-}
-
-/**
- * Depth and roof options for the Design tab.
- * An empty stack never calls /api/bom, so `choices` is missing and the static catalog is used.
- * Fit flags apply only while layers exist. Unfit values stay in the list.
- */
-export function catalogChoicesFor(name, spec) {
-  const layers = (spec && spec.layers) || [];
-  const choices = spec && spec.choices;
-  const live = layers.length && choices ? choices[name] : null;
-  const current = spec ? spec.current : undefined;
-  return catalogSelectOptions(name, live, current, !!(spec && spec.fitOnly));
 }
 
 export function checkedCount(progress) {
