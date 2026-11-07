@@ -497,3 +497,28 @@ assert.match(tpuRoleWarning(rigidTpu), /flexible/);
 const flexTpu = { filaments: [{ id: "flex", name: "Flex", material: "TPU 95A" }], roles: { tpu: "flex" } };
 assert.equal(tpuRoleWarning(flexTpu), "");
 assert.equal(tpuRoleWarning({ filaments: [], roles: {} }), "");
+
+// Repairing a missing/duplicate id must never steal a later spool's valid id (review, PR #25).
+const collide = {
+  filaments: [
+    { id: "a", name: "A", color: "#111111", material: "PLA", preset: {} },
+    { id: "a", name: "Cream", color: "#222222", material: "PLA", preset: {} },
+    { id: "cream", name: "Custom", color: "#333333", material: "PLA", preset: {} },
+  ],
+  roles: { box: "cream" },
+};
+ensureFilamentIds(collide);
+assert.equal(collide.filaments[2].id, "cream", "the first owner of a valid id keeps it");
+assert.notEqual(collide.filaments[1].id, "cream", "the duplicate gets a fresh id, not a later spool's");
+assert.equal(new Set(collide.filaments.map((f) => f.id)).size, 3, "ids stay unique");
+assert.equal(filamentForRole(collide, "box").name, "Custom", "an unrelated role keeps its spool");
+const idlessFirst = {
+  filaments: [
+    { name: "Cream", color: "#222222", material: "PLA", preset: {} },
+    { id: "cream", name: "Custom", color: "#333333", material: "PLA", preset: {} },
+  ],
+  roles: { box: "cream" },
+};
+ensureFilamentIds(idlessFirst);
+assert.equal(filamentForRole(idlessFirst, "box").name, "Custom", "an id-less row cannot take the next spool's id either");
+assert.match(readFileSync(new URL("../index.html", import.meta.url), "utf8"), /#addFilament'\)\.onclick=[\s\S]{0,200}ensureFilamentIds\(state\.settings\)/, "classic mints an id when a filament is added");

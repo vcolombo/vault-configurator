@@ -238,14 +238,17 @@ function filamentSlug(name) {
  */
 export function ensureFilamentIds(settings) {
   if (!settings || !Array.isArray(settings.filaments)) return settings;
+  // Reserve every id already present up front: repairing an earlier missing/duplicate id
+  // must never steal a later spool's valid id (the first owner of a duplicate keeps it).
+  const reserved = new Set(settings.filaments.map((filament) => filament.id).filter((id) => typeof id === "string" && id));
   const used = new Set();
   settings.filaments.forEach((filament) => {
     let id = typeof filament.id === "string" && filament.id ? filament.id : "";
     if (!id || used.has(id)) {
       const base = filamentSlug(filament.name) || "filament";
-      id = base;
       let n = 2;
-      while (used.has(id)) id = `${base}-${n++}`;
+      id = base;
+      while (used.has(id) || reserved.has(id)) id = `${base}-${n++}`;
       filament.id = id;
     }
     used.add(filament.id);

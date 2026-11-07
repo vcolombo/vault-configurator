@@ -130,7 +130,8 @@ function Printers() {
             const base = catalog.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
             let id = base;
             let n = 2;
-            while (draft.settings.printers.some((row) => row.id === id)) id = `${base}-${n++}`;
+            // A pending Undo reserves the removed printer's id, or restore would silently no-op.
+            while (draft.settings.printers.some((row) => row.id === id) || removed?.printer.id === id) id = `${base}-${n++}`;
             draft.settings.printers.push({
               ...catalog,
               bed: [catalog.bed[0], catalog.bed[1]],
