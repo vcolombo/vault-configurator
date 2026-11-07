@@ -326,7 +326,7 @@ A 0.4rem round track in Recess with a Bench Teal fill. Its width animation is di
 - **Do** take every colour from the token set so light and dark both work. Add a token before adding a literal.
 
 ### Don't:
-- **Don't** add a second accent colour, gradients, glow, or coloured backgrounds on panels. The three signal washes on message lines are the only tinted backgrounds.
+- **Don't** add a second accent colour, gradients, glow, or decorative coloured backgrounds on panels. Tinted backgrounds are limited to the three signal washes on message lines and Teal Wash on the documented selected/open states.
 - **Don't** use Caution, Fault or Confirmed as saturated fills, borders, left-edge stripes or banners; they colour text, and a message line may add its faint wash.
 - **Don't** lift on hover or add shadows beyond the Card whisper.
 - **Don't** introduce a display typeface or a size jump to show emphasis; use weight.

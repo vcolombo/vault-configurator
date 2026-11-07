@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-07T06:59:26+00:00",
+  "generatedAt": "2026-11-07T17:49:53+00:00",
   "title": "Design System: VAULT configurator",
   "extensions": {
     "colorMeta": {
@@ -448,7 +448,7 @@
       "refersTo": "tab",
       "description": "Text-only tabs on a hairline baseline; the selected one is Bench Ink, weight 600, with a 2px Bench Teal underline.",
       "html": "<nav class=\"ds-tabs\"><button>1 Design</button><button class=\"ds-tab-on\" aria-selected=\"true\">2 Parts</button><button>3 Plates</button><button>4 Assemble</button></nav>",
-      "css": ".ds-tabs{font-family:var(--font, 'IBM Plex Sans', 'Segoe UI', sans-serif);line-height:1.45;display:flex;gap:1.25rem;padding:.35rem 1.25rem 0;border-bottom:1px solid var(--border, oklch(0.91 0.004 286))} .ds-tabs button{font:inherit;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted-foreground, oklch(0.52 0.012 286));padding:.7rem .1rem .55rem;min-height:2.5rem;cursor:pointer} .ds-tabs .ds-tab-on{color:var(--foreground, oklch(0.21 0.006 286));border-bottom-color:var(--teal, oklch(0.52 0.07 195));font-weight:600} .ds-tabs button:focus-visible{outline:2px solid var(--ring, oklch(0.52 0.07 195));outline-offset:2px;}"
+      "css": ".ds-tabs{font-family:var(--font, 'IBM Plex Sans', 'Segoe UI', sans-serif);line-height:1.45;display:flex;gap:1.25rem;padding:.35rem 1.25rem 0;border-bottom:1px solid var(--border, oklch(0.91 0.004 286))} .ds-tabs button{font:inherit;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted-foreground, oklch(0.52 0.012 286));padding:.7rem .1rem .55rem;min-height:2.5rem;cursor:pointer} .ds-tabs .ds-tab-on{color:var(--foreground, oklch(0.21 0.006 286));border-bottom-color:var(--teal, oklch(0.52 0.07 195));font-weight:600} .ds-tabs button:not(.ds-tab-on):hover{color:var(--foreground, oklch(0.21 0.006 286))} .ds-tabs button:focus-visible{outline:2px solid var(--ring, oklch(0.52 0.07 195));outline-offset:2px;}"
     },
     {
       "name": "Card",
@@ -552,7 +552,7 @@
       "**Do** take every colour from the token set so light and dark both work. Add a token before adding a literal."
     ],
     "donts": [
-      "**Don't** add a second accent colour, gradients, glow, or coloured backgrounds on panels. The three signal washes on message lines are the only tinted backgrounds.",
+      "**Don't** add a second accent colour, gradients, glow, or decorative coloured backgrounds on panels. Tinted backgrounds are limited to the three signal washes on message lines and Teal Wash on the documented selected/open states.",
       "**Don't** use Caution, Fault or Confirmed as saturated fills, borders, left-edge stripes or banners; they colour text, and a message line may add its faint wash.",
       "**Don't** lift on hover or add shadows beyond the Card whisper.",
       "**Don't** introduce a display typeface or a size jump to show emphasis; use weight.",

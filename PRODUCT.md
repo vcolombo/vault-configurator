@@ -28,7 +28,7 @@ It runs against the user's own copy of the archive and ships none of the designe
 - First start measures all 733 STLs, extracts help pages from the user's PDFs, and fetches render sheets from ussadesign.com. This is slow once and cached after.
 - Server installs download exports as one zip (3MFs, BOM.md, stack.json). Slicer presets are sent from the browser by picking the slicer's settings folder. The local install reads slicer presets directly.
 - Named projects stay in the browser. Save stack and Load stack move a stack as JSON, and the site's "Your build" PDF or saved JSON can be imported.
-- The workflow is three steps: Stack, then Parts & hardware, then Plates & export. A planner view for printer fleet fit and saved-project progress also exists.
+- The workflow is four steps in the numbered tabs: 1 Design, 2 Parts, 3 Plates, 4 Assemble. The first three take a stack to print-ready 3MF projects; Assemble carries the hardware and parts checklist used while building. Print progress on an exported plan is tracked by marking plates printed.
 
 ## Capabilities and Constraints
 
