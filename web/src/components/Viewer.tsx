@@ -23,7 +23,17 @@ export function Viewer() {
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeButton.current?.focus();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeRef.current(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { closeRef.current(); return; }
+      if (event.key !== "Tab" || !dialog.current) return;
+      // Document scope, not the dialog element: clicking non-focusable dialog content drops focus
+      // to <body>, whose Tab events never bubble through the dialog — the modal must still contain them.
+      const focusables = [...dialog.current.querySelectorAll<HTMLElement>("button, a[href], canvas[tabindex]")].filter((node) => !node.hasAttribute("disabled"));
+      if (!focusables.length) return;
+      const index = focusables.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); focusables[focusables.length - 1].focus(); }
+      else if (!event.shiftKey && (index === -1 || index === focusables.length - 1)) { event.preventDefault(); focusables[0].focus(); }
+    };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
@@ -103,15 +113,6 @@ export function Viewer() {
     camera.position.copy(controls.target).add(new THREE.Vector3(next.x, next.z, next.y));
     controls.update();
   };
-  const trapTab = (event: React.KeyboardEvent) => {
-    if (event.key !== "Tab" || !dialog.current) return;
-    const focusables = [...dialog.current.querySelectorAll<HTMLElement>("button, canvas[tabindex]")].filter((node) => !node.hasAttribute("disabled"));
-    if (!focusables.length) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  };
   if (!viewer) return null;
   const download = () => {
     const link = document.createElement("a");
@@ -129,7 +130,7 @@ export function Viewer() {
     }
   };
   return (
-    <div className="viewer" role="dialog" aria-modal="true" aria-label={viewer.label} ref={dialog} onKeyDown={trapTab}>
+    <div className="viewer" role="dialog" aria-modal="true" aria-label={viewer.label} ref={dialog}>
       <div className="bar">
         <strong>{viewer.label}</strong>
         <span className="note">drag to orbit · wheel to zoom · arrow keys orbit when the view is focused</span>

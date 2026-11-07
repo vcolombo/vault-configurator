@@ -387,6 +387,17 @@ test("the 3D viewer takes focus on open and hands it back to the part card on Es
   expect(dialog).toHaveAttribute("aria-modal", "true");
   expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
 
+  // Clicking non-focusable dialog content drops focus to <body>; Tab must still be contained.
+  await user.click(within(dialog).getByText("S Box", { selector: "strong" }));
+  await user.tab({ shift: true });
+  expect(within(dialog).getByRole("img", { name: /3D view of S Box/ })).toHaveFocus();
+  await user.click(within(dialog).getByText("S Box", { selector: "strong" }));
+  await user.tab();
+  expect(within(dialog).getByRole("button", { name: "Download STL" })).toHaveFocus();
+  // Ordinary boundary wrap still holds.
+  await user.tab({ shift: true });
+  expect(within(dialog).getByRole("img", { name: /3D view of S Box/ })).toHaveFocus();
+
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog", { name: "S Box" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "View S Box in 3D" })).toHaveFocus();
