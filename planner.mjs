@@ -546,6 +546,10 @@ export function loadPlannerState(raw, meta) {
     }));
     if (!saved.settings.spoolman) saved.settings.spoolman = blank.spoolman || "";
     saved.settings.printers.forEach((printer) => {
+      // Downstream reads maxH as "or z", so a non-positive saved limit (from ticking
+      // "No tall parts" on a printer with z <= 1) means no limit. Write that back
+      // before the server's positive-dimension check can reject every request.
+      if (printer.maxH != null && !(printer.maxH > 0)) printer.maxH = printer.z;
       if (printer.id === "h2c" && printer.bed && printer.bed[0] === 330) {
         printer.bed = [325, 320];
         printer.z = 320;

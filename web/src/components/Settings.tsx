@@ -178,7 +178,7 @@ function Printers() {
               <label className="check">
                 <input type="checkbox" checked={noTall} onChange={(event) => patch((draft) => {
                   const row = findPrinter(draft.settings.printers, printer.id);
-                  row.maxH = event.target.checked ? Math.min(row.maxH || 120, row.z - 1) : row.z;
+                  row.maxH = event.target.checked ? Math.min(row.maxH || 120, Math.max(row.z - 1, row.z / 2)) : row.z;
                 })} />
                 No tall parts
               </label>

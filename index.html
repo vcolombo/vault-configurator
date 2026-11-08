@@ -665,7 +665,7 @@ function renderPrinterBasics(p){const host=$('#printerBasics');host.replaceChild
  const num=(label,value,fn)=>el('label',{},label+' ',el('input',{type:'number',value,onchange:e=>{const r=validNum(e.target,label,0,true);if(!r.ok){e.target.value=value;return}fn(r.value);changed();renderSetup();if(editingId===p.id)renderPrinterBasics(p)}}));
  const noTall=(p.maxH||p.z)<p.z;
  host.append(el('label',{},'Name ',name),el('div',{class:'row'},num('X',p.bed[0],v=>{p.bed[0]=v}),num('Y',p.bed[1],v=>{p.bed[1]=v}),num('Z',p.z,v=>{p.z=v;if(!noTall)p.maxH=v})),
-  el('label',{class:'check'},el('input',{type:'checkbox',...(noTall?{checked:''}:{}),onchange:e=>{p.maxH=e.target.checked?Math.min(p.maxH||120,p.z-1):p.z;changed();renderPrinterBasics(p)}}),' No tall parts'),
+  el('label',{class:'check'},el('input',{type:'checkbox',...(noTall?{checked:''}:{}),onchange:e=>{p.maxH=e.target.checked?Math.min(p.maxH||120,Math.max(p.z-1,p.z/2)):p.z;changed();renderPrinterBasics(p)}}),' No tall parts'),
   noTall?num('Max part height',p.maxH,v=>{p.maxH=v}):el('p',{class:'note'},`Max part height ${p.z} mm (all)`))}
 function openPrinter(id){editingId=id;const p=state.settings.printers.find(x=>x.id===id);if(!p)return;renderPrinterBasics(p);renderSlicers();const dlg=$('#printerEditor');if(!dlg.open)dlg.showModal()}
 function renderSlicers(){const s=state.settings;const st=$('#slicers tbody');if(!st)return;st.replaceChildren();ensurePrinterPresets();

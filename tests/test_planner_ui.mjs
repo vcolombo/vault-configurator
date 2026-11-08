@@ -545,6 +545,19 @@ const legacyShort = loadPlannerState(JSON.stringify({
 }), readerMeta);
 assert.equal(legacyShort.settings.filaments.length, readerMeta.defaults.filaments.length, "a short shelf without ids is still a legacy save and resets");
 
+// A no-tall tick on a printer with z <= 1 used to save maxH 0 or negative, which downstream
+// reads as "no limit" (maxH or z) but the server's positive check rejects outright. Loading
+// such a save writes the limit back to z instead of bricking every request.
+const brokenLimitSettings = JSON.parse(JSON.stringify(readerMeta.defaults));
+brokenLimitSettings.printers[0].maxH = 0;
+if (brokenLimitSettings.printers[1]) brokenLimitSettings.printers[1].maxH = -5;
+const brokenLimit = loadPlannerState(JSON.stringify({
+  stack: { name: "kept", depth: 5, layers: [], roof: { type: "none" }, mods: {} },
+  settings: brokenLimitSettings,
+}), readerMeta);
+assert.equal(brokenLimit.settings.printers[0].maxH, brokenLimit.settings.printers[0].z, "maxH 0 loads as no limit (z), not a server-rejected 0");
+if (brokenLimit.settings.printers[1]) assert.equal(brokenLimit.settings.printers[1].maxH, brokenLimit.settings.printers[1].z, "a negative maxH loads as z too");
+
 // Number fields never save NaN or a non-positive dimension (#20).
 assert.deepEqual(parseSettingNumber("220", { label: "Bed X", min: 0, exclusiveMin: true }), { ok: true, value: 220 });
 assert.equal(parseSettingNumber("", { label: "Bed X" }).ok, false, "cleared field is not 0");

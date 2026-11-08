@@ -250,6 +250,25 @@ test("undo after the user re-picks a fit target keeps the newer choice", async (
   expect(afterUndo.settings.mode).toBe("u1");
 });
 
+test("ticking No tall parts on a printer with Z of 1 still saves a positive limit", async () => {
+  const user = userEvent.setup();
+  const tinyPrinters = printers.map((printer) => printer.id === "u1" ? { ...printer, z: 1, maxH: 1 } : printer);
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults, printers: tinyPrinters },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByText("No tall parts, nozzle and process preset"));
+  await user.click(screen.getAllByRole("checkbox", { name: /No tall parts/ })[0]);
+  const afterTick = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
+  const u1 = afterTick.settings.printers.find((printer: { id: string }) => printer.id === "u1");
+  expect(u1.maxH).toBeGreaterThan(0);
+  expect(u1.maxH).toBeLessThan(1);
+});
+
 test("a BOM result keeps an assemble check and a stale stack is dropped", () => {
   const layer = {
     type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
