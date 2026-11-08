@@ -20,9 +20,10 @@ export function Viewer() {
   const file = viewer?.file || "";
 
   // The dialog only exists while a part is open (App unmounts it on close), so mount/unmount is the
-  // lifecycle: remember the opener and focus Close on mount, Escape dismisses, unmount hands focus back.
+  // lifecycle. The opener is captured by openViewer at click time—before this lazily loaded
+  // component mounts—so a focus change during chunk loading cannot change the restoration target.
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = viewer?.opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     closeButton.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") { closeRef.current(); return; }

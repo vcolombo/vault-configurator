@@ -64,7 +64,7 @@ export function Parts() {
               disabled={!row.sample.file}
               title={row.sample.file ? `View ${row.sample.name} in 3D` : "File missing from the archive"}
               aria-label={row.sample.file ? `View ${row.sample.name} in 3D` : `${row.sample.name} — file missing`}
-              onClick={() => row.sample.file && store.openViewer(row.sample.file, row.sample.name, roleColor(state.settings, row.role))}
+              onClick={(event) => row.sample.file && store.openViewer(row.sample.file, row.sample.name, roleColor(state.settings, row.role), event.currentTarget)}
             >
               <span className="swatch" style={{ background: roleColor(state.settings, row.role) }} />
               <span>

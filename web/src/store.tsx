@@ -48,8 +48,8 @@ type Store = {
   showHelp: (topic: string) => void;
   expandedLayer: number | null;
   setExpandedLayer: (index: number | null) => void;
-  viewer: { file: string; label: string; color: string } | null;
-  openViewer: (file: string, label: string, color: string) => void;
+  viewer: { file: string; label: string; color: string; opener: HTMLElement | null } | null;
+  openViewer: (file: string, label: string, color: string, opener?: HTMLElement | null) => void;
   closeViewer: () => void;
   patch: (recipe: (draft: PlannerState) => void) => void;
   setTab: (tab: TabId) => void;
@@ -363,7 +363,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       expandedLayer,
       setExpandedLayer,
       viewer,
-      openViewer: (file, label, color) => setViewer({ file, label, color }),
+      openViewer: (file, label, color, opener) => setViewer({ file, label, color, opener: opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null) }),
       closeViewer: () => setViewer(null),
       patch,
       setTab: (tab) => patch((draft) => {
