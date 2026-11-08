@@ -269,6 +269,27 @@ test("ticking No tall parts on a printer with Z of 1 still saves a positive limi
   expect(u1.maxH).toBeLessThan(1);
 });
 
+test("printer Undo survives leaving and returning to the Printers section", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Remove P1S" }));
+  await user.click(screen.getByRole("button", { name: "Remove P1S" }));
+  expect(JSON.parse(localStorage.getItem("vault-configurator") || "{}").settings.printers.some((printer: { id: string }) => printer.id === "p1s")).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Filaments" }));
+  await user.click(screen.getByRole("button", { name: "Close settings" }));
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Printers" }));
+  await user.click(await screen.findByRole("button", { name: "Undo" }));
+  expect(JSON.parse(localStorage.getItem("vault-configurator") || "{}").settings.printers.some((printer: { id: string }) => printer.id === "p1s")).toBe(true);
+});
+
 test("a BOM result keeps an assemble check and a stale stack is dropped", () => {
   const layer = {
     type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",

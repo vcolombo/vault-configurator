@@ -39,6 +39,8 @@ type Store = {
   setSettingsOpen: (open: boolean) => void;
   settingsSection: SettingsSection;
   setSettingsSection: (section: SettingsSection) => void;
+  removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
+  setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
   archive: { done: number; total: number; msg?: string };
   status: string;
   exportStatus: string;
@@ -154,6 +156,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeChoice>(() => normalizeTheme(localStorage.getItem(THEME_STORAGE_KEY)));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("printers");
+  const [removedPrinter, setRemovedPrinter] = useState<Store["removedPrinter"]>(null);
   const [archive, setArchive] = useState<{ done: number; total: number; msg?: string }>({ done: 0, total: 0 });
   const [status, setStatus] = useState("");
   const [exportStatus, setExportStatus] = useState("");
@@ -166,6 +169,19 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [presetStatus, setPresetStatus] = useState("");
   const stateRef = useRef<PlannerState | null>(null);
   stateRef.current = state;
+
+  // The pending printer-removal Undo lives here, not in Settings, so it survives section
+  // switches and closing Settings. A selection the user changes after the removal is their
+  // newer choice: drop it from the capture as soon as it leaves the post-removal fallback,
+  // so Undo cannot overwrite it even if they later switch back to the fallback value.
+  useEffect(() => {
+    if (!removedPrinter || !state) return;
+    const next = { ...removedPrinter };
+    let touched = false;
+    if (next.mode && state.settings.mode !== "both") { delete next.mode; touched = true; }
+    if (next.fitTarget && state.fitTarget !== "every") { delete next.fitTarget; touched = true; }
+    if (touched) setRemovedPrinter(next);
+  }, [removedPrinter, state]);
 
   useEffect(() => {
     applyTheme(theme);
@@ -334,6 +350,8 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       setSettingsOpen,
       settingsSection,
       setSettingsSection,
+      removedPrinter,
+      setRemovedPrinter,
       archive,
       status,
       exportStatus,
@@ -555,7 +573,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       refreshPresets: setPresets,
     };
     return value;
-  }, [archive, bom, bootError, expandedLayer, exportFiles, exportStatus, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
+  }, [archive, bom, bootError, expandedLayer, exportFiles, exportStatus, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, removedPrinter, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
 
   if (bootError && !api) return <p className="boot-error">{bootError}</p>;
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

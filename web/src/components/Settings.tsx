@@ -1,4 +1,4 @@
-import { useEffect, useState, type InputHTMLAttributes } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import { legalExportMode, legalFitTarget, printerLabel, printerRemovalNotes, removePrinterById, restorePrinter, spoolLabel } from "../../../planner.mjs";
 import { presetsFor } from "../presets";
 import { usePlanner } from "../store";
@@ -58,9 +58,8 @@ function Section() {
 }
 
 function Printers() {
-  const { state, meta, presets, patch, showHelp, plan } = usePlanner();
+  const { state, meta, presets, patch, showHelp, plan, removedPrinter: removed, setRemovedPrinter: setRemoved } = usePlanner();
   const [confirmId, setConfirmId] = useState("");
-  const [removed, setRemoved] = useState<{ printer: Printer; index: number; mode?: string; fitTarget?: string } | null>(null);
   const impact = (printer: Printer) => printerRemovalNotes(state.settings, state, plan?.plates, printer);
   const remove = (printer: Printer) => {
     setRemoved({
@@ -76,17 +75,6 @@ function Printers() {
       legalFitTarget(draft);
     });
   };
-  // A selection changed after the removal is the user's newer choice: drop it from the undo
-  // capture as soon as it leaves the post-removal fallback, so Undo cannot overwrite it even
-  // if the user later switches back to the fallback value.
-  useEffect(() => {
-    if (!removed) return;
-    const next = { ...removed };
-    let touched = false;
-    if (next.mode && state.settings.mode !== "both") { delete next.mode; touched = true; }
-    if (next.fitTarget && state.fitTarget !== "every") { delete next.fitTarget; touched = true; }
-    if (touched) setRemoved(next);
-  }, [removed, state.settings.mode, state.fitTarget]);
   return (
     <section className="card">
       <h2>Printers</h2>

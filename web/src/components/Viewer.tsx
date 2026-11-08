@@ -4,6 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { settingsForApi } from "../../../planner.mjs";
 import { usePlanner } from "../store";
+import type { Settings } from "../types";
 
 export function Viewer() {
   const { viewer, closeViewer, state } = usePlanner();
@@ -159,7 +160,7 @@ export function Viewer() {
   );
 }
 
-async function exportPart(file: string, name: string, settings: unknown): Promise<{ download?: string; warning?: string }> {
+async function exportPart(file: string, name: string, settings: Settings): Promise<{ download?: string; warning?: string }> {
   const response = await fetch("/api/export_part", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

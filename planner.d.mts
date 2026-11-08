@@ -150,7 +150,7 @@ export const THEME_STORAGE_KEY: string;
   export function ensureFilamentIds<T extends { filaments?: FilamentBlob[]; roles?: Record<string, unknown> }>(settings: T | null | undefined, extraReserved?: string[]): T;
   export function filamentForRole(settings: { filaments?: FilamentBlob[]; roles?: Record<string, unknown> } | null | undefined, role: string): FilamentBlob | undefined;
   export function slotIndexForRole(settings: { filaments?: FilamentBlob[]; roles?: Record<string, unknown> } | null | undefined, role: string): number;
-  export function settingsForApi<T>(settings: T): T;
+  export function settingsForApi<T extends { roles?: Record<string, unknown> } | null | undefined>(settings: T): T extends object ? Omit<T, "roles"> & { roles: Record<string, number> } : T;
   export function removeFilamentById(settings: { filaments?: FilamentBlob[]; roles?: Record<string, unknown> } | null | undefined, id: string): { filament: FilamentBlob; index: number; affectedRoles: string[]; fallbackId: string } | null;
   export function restoreFilament<T extends { filaments?: FilamentBlob[]; roles?: Record<string, unknown> }>(settings: T, removed: { filament: FilamentBlob; index: number; affectedRoles?: string[]; fallbackId?: string } | null | undefined): T;
   export function parseSettingNumber(raw: unknown, options?: { label?: string; min?: number; exclusiveMin?: boolean; max?: number }): { ok: true; value: number } | { ok: false; error: string };
