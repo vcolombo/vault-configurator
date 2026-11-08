@@ -810,7 +810,7 @@ function renderPlan(plan,files,opts={}){const box=opts.box||$('#plates');if(box=
 async function runExport(path,extra,statusEl,btn){statusEl.textContent='Starting…';btn.disabled=true;const epoch=planEpoch;const bar=$('#progressBar');bar.style.display='block';bar.firstElementChild.style.width='0%';
  try{await api(path,{stack:state.stack,settings:state.settings,overrides:state.overrides,...extra});
   while(true){await new Promise(r=>setTimeout(r,800));const st=await (await fetch('/api/export_status')).json();bar.firstElementChild.style.width=st.percent+'%';statusEl.textContent=`${st.percent}% · ${st.msg}`;
-   if(st.error)throw new Error(st.error);if(!st.running&&st.result){syncProgress(st.result.plan);if(epoch===planEpoch)renderPlan(st.result.plan,st.result.files);
+   if(st.error)throw new Error(st.error);if(!st.running&&st.result){if(epoch===planEpoch){syncProgress(st.result.plan);renderPlan(st.result.plan,st.result.files)}
     const a=el('a',{href:'/api/download',download:st.result.zip},'Download '+st.result.zip);statusEl.replaceChildren(`done in ${st.result.seconds}s · `,a);if(META.handoff==='none')a.click();
     break}}}
  catch(e){statusEl.replaceChildren(el('span',{class:'bad'},e.message))}finally{btn.disabled=false;setTimeout(()=>bar.style.display='none',1500)}}
