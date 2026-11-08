@@ -212,12 +212,27 @@ function LayerCard({ index }: { index: number }) {
       }}
     >
       <div className="layer-row">
-        <span
-          className="grip"
+        <button
+          type="button"
+          className="grip icon-btn"
+          data-grip-index={index}
           title="Drag to reorder"
+          aria-label={`Reorder ${title}. Drag, or focus and use the arrow keys.`}
+          onClick={() => store.setExpandedLayer(index)}
+          onKeyDown={(event) => {
+            const delta = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+            if (!delta) return;
+            event.preventDefault();
+            const target = index + delta;
+            if (target < 0 || target >= state.stack.layers.length) return;
+            store.moveLayer(index, delta);
+            // Focus follows the moved layer: cards are keyed by index, so the
+            // focused button would otherwise end up on the layer that swapped in.
+            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-grip-index="${target}"]`)?.focus());
+          }}
         >
           <Grip />
-        </span>
+        </button>
         <button type="button" className="name" aria-expanded={open} aria-label={`Edit ${title}`} onClick={() => store.setExpandedLayer(open ? null : index)}>
           {title}
           {notes.some((note) => note.includes("does not fit")) ? <span className="bad"> · does not fit</span> : null}
