@@ -199,7 +199,7 @@ function TestPlates() {
   const { state, meta, bom, patch, runExport } = usePlanner();
   const kinds = [...new Set((bom?.parts || []).map((part) => part.kind).filter((kind): kind is string => !!kind))];
   const list = kinds.length ? kinds : meta.kinds;
-  const picked = Object.entries(state.tests).filter(([, on]) => on).map(([kind]) => kind);
+  const picked = list.filter((kind) => state.tests[kind]);
   return (
     <section className="card spaced">
       <h2>Test plates</h2>

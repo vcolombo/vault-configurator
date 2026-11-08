@@ -193,6 +193,9 @@ function LayerCard({ index }: { index: number }) {
     current: layer.height,
   }, (value) => `${value}U`);
   const bays = meta.layouts[layer.layout] || [layer.layout];
+  const facades = layer.facades || [];
+  const allBaysSplit = facades.length > 0 && facades.every((faces) => faces.length > 1);
+  const someBaySplit = facades.some((faces) => faces.length > 1);
   const title = layerTitle(layer);
   return (
     <div
@@ -271,7 +274,7 @@ function LayerCard({ index }: { index: number }) {
                 </select>
               </label>
               <Flag index={index} field="labels" label="labels" help="labels" />
-              <Flag index={index} field="rails" label="geared rails" help="rails" forced={(layer.facades || []).length > 0 && (layer.facades || []).every((faces) => faces.length > 1)} note={(layer.facades || []).some((faces) => faces.length > 1) && !(layer.facades || []).every((faces) => faces.length > 1) ? "split bays always include them" : undefined} />
+              <Flag index={index} field="rails" label="geared rails" help="rails" forced={allBaysSplit} note={someBaySplit && !allBaysSplit ? "split bays always include them" : undefined} />
               <Flag index={index} field="manualSupports" label="manual support wall" help="manualSupports" />
               {layer.interior === "grid" ? (
                 <>

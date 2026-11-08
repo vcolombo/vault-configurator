@@ -562,8 +562,8 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           const result = await postJson<{ saved?: Record<string, string> }>("/api/presets_upload", { files });
           const next = await getJson<PresetMap>("/api/presets");
           setPresets(next);
-          const outcomes = Object.values(result.saved || {});
-          setPresetStatus(outcomes.length ? outcomes.join("; ") : "no presets saved from that folder");
+          const outcomes = Object.entries(result.saved || {});
+          setPresetStatus(outcomes.length ? outcomes.map(([slicer, outcome]) => `${slicer}: ${outcome}`).join("; ") : "no presets saved from that folder");
         } catch (error) {
           setPresetStatus(error instanceof Error ? error.message : "preset upload failed");
         }
