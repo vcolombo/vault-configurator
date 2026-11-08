@@ -202,6 +202,8 @@ function sameShelf(row, legacy) {
 /**
  * Replace a saved shop row with the current default, in one assignment, when that row is still a default.
  * A hand-edited name, colour, or material stays. Missing `forExport` is left missing.
+ * A row carrying a stable id was saved by current code, so its fields are the user's — never
+ * replace it, even when its name happens to match a legacy role name.
  */
 export function migrateShop(settings, defaults) {
   if (!settings || !defaults) return settings;
@@ -211,8 +213,8 @@ export function migrateShop(settings, defaults) {
       const fresh = nextFilaments[index];
       const legacy = LEGACY_FILAMENTS[index];
       const stillDefault = sameShelf(row, legacy) || LEGACY_ROLE_NAMES.includes(row && row.name);
-      if (!fresh || !stillDefault) return row;
-      return { ...JSON.parse(JSON.stringify(fresh)), preset: (row && row.preset) || {}, ...(row && row.id ? { id: row.id } : {}) };
+      if (!fresh || !stillDefault || (row && row.id)) return row;
+      return { ...JSON.parse(JSON.stringify(fresh)), preset: (row && row.preset) || {} };
     });
   }
   const nextPrinters = Array.isArray(defaults.printers) ? defaults.printers : [];

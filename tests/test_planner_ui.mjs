@@ -558,6 +558,19 @@ const brokenLimit = loadPlannerState(JSON.stringify({
 assert.equal(brokenLimit.settings.printers[0].maxH, brokenLimit.settings.printers[0].z, "maxH 0 loads as no limit (z), not a server-rejected 0");
 if (brokenLimit.settings.printers[1]) assert.equal(brokenLimit.settings.printers[1].maxH, brokenLimit.settings.printers[1].z, "a negative maxH loads as z too");
 
+// Renaming a spool to a legacy role name must not make reload overwrite it: a row with a
+// stable id was saved by current code, so migrateShop leaves it alone. The same row without
+// an id is a legacy save and still upgrades to the current default (Copilot review, PR #25).
+const renamedRow = { id: "charcoal", name: "TPU", color: "#123456", material: "TPU", preset: {} };
+const renamedSettings = { filaments: [renamedRow], printers: [] };
+migrateShop(renamedSettings, readerMeta.defaults);
+assert.equal(renamedSettings.filaments[0].name, "TPU", "an id-bearing row renamed to a legacy role name keeps its name");
+assert.equal(renamedSettings.filaments[0].material, "TPU");
+assert.equal(renamedSettings.filaments[0].color, "#123456");
+const legacyNamedSettings = { filaments: [{ name: "TPU", color: "#123456", material: "TPU", preset: {} }], printers: [] };
+migrateShop(legacyNamedSettings, readerMeta.defaults);
+assert.equal(legacyNamedSettings.filaments[0].name, readerMeta.defaults.filaments[0].name, "the same row without an id is still a legacy save and upgrades");
+
 // Number fields never save NaN or a non-positive dimension (#20).
 assert.deepEqual(parseSettingNumber("220", { label: "Bed X", min: 0, exclusiveMin: true }), { ok: true, value: 220 });
 assert.equal(parseSettingNumber("", { label: "Bed X" }).ok, false, "cleared field is not 0");

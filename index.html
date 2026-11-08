@@ -788,8 +788,11 @@ function renderProjects(){const sel=$('#projectList');if(!sel)return;sel.replace
 let lastPlan=null,lastFiles=null,lastOpts=null,planEpoch=0;
 /* A cached plan's plate slots are shelf positions: removing or restoring a spool shifts them, so
    the cached plan must go (re-rendering it would recolour plates or index past the shelf end).
-   The epoch also stops a plan request that was in flight during the edit from restoring it. */
-function dropCachedPlan(){planEpoch++;lastPlan=null;lastFiles=null;lastOpts=null;const box=$('#plates');if(box&&box.childElementCount)box.replaceChildren(el('p',{class:'note'},'The filament shelf changed since this plan was made — preview the plates again.'))}
+   Printed checks are keyed by those same slot positions (the layout fingerprint carries no
+   filament identity), so they go too — hardware and assembly progress do not depend on the
+   shelf and stay. The epoch also stops a plan request that was in flight during the edit
+   from restoring the stale plan or its progress. */
+function dropCachedPlan(){planEpoch++;lastPlan=null;lastFiles=null;lastOpts=null;if(state&&state.progress){state.progress.plates={};state.progress.layoutKey=''}const box=$('#plates');if(box&&box.childElementCount)box.replaceChildren(el('p',{class:'note'},'The filament shelf changed since this plan was made — preview the plates again.'))}
 function renderPlan(plan,files,opts={}){const box=opts.box||$('#plates');if(box===$('#plates')){lastPlan=plan;lastFiles=files;lastOpts=opts}box.replaceChildren();const s=state.settings;const name=id=>printerLabel(s.printers.find(p=>p.id===id)||{name:id});
  if(opts.synthetic)box.append(el('p',{class:'warn'},plan.label||'Synthetic sample. Not VAULT parts.'));
  else if(state.progressNote)box.append(el('p',{class:'warn'},state.progressNote));
