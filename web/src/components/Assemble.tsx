@@ -12,7 +12,7 @@ export function Assemble() {
     <div className="page">
       <h1>Assemble</h1>
       <p className="lede">Check hardware and parts off as you build. The checks stay in this browser.</p>
-      <p className="note">{counts.hardware}/{rows.length} hardware lines checked. A line clears when its quantity changes.</p>
+      <p className="note">{counts.hardware}/{rows.length} hardware lines · {counts.assemble}/{new Set(parts.map((part) => `${part.group}|${part.name}`)).size} assembly lines checked. A line clears when its quantity changes.</p>
       <Hardware />
       <section className="card spaced">
         <h2>Assembly checklist</h2>
