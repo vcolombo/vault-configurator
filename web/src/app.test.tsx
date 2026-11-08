@@ -200,6 +200,32 @@ test("patch writes a legal export mode and fit target into saved state", async (
   expect(screen.getByLabelText("All printers")).toHaveValue("every");
 });
 
+test("removing the printer export and fit point at says so, and undo restores both", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "plates",
+    fitTarget: "u1",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults, mode: "u1" },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Plates & export" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Remove U1" }));
+  expect(screen.getByText(/only printer parts are sent to/)).toBeInTheDocument();
+  expect(screen.getByText(/fit-check target/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Remove U1" }));
+  const afterRemove = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
+  expect(afterRemove.settings.printers.some((printer: { id: string }) => printer.id === "u1")).toBe(false);
+  expect(afterRemove.settings.mode).toBe("both");
+  expect(afterRemove.fitTarget).toBe("every");
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  const afterUndo = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
+  expect(afterUndo.settings.printers.some((printer: { id: string }) => printer.id === "u1")).toBe(true);
+  expect(afterUndo.settings.mode).toBe("u1");
+  expect(afterUndo.fitTarget).toBe("u1");
+});
+
 test("a BOM result keeps an assemble check and a stale stack is dropped", () => {
   const layer = {
     type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",

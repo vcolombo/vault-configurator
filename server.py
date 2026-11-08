@@ -2,6 +2,7 @@
 import copy
 import io
 import json
+import math
 import mimetypes
 import os
 import re
@@ -100,7 +101,9 @@ def _positive(value, what):
         number = float(value)
     except (TypeError, ValueError):
         raise ValueError(f"{what} needs a number.") from None
-    if number != number or number <= 0:  # NaN or non-positive
+    if not math.isfinite(number):  # NaN, or infinity from JSON like 1e309
+        raise ValueError(f"{what} needs a number.")
+    if number <= 0:
         raise ValueError(f"{what} must be above 0.")
     return number
 
@@ -110,7 +113,9 @@ def _nonnegative(value, what):
         number = float(value)
     except (TypeError, ValueError):
         raise ValueError(f"{what} needs a number.") from None
-    if number != number or number < 0:
+    if not math.isfinite(number):
+        raise ValueError(f"{what} needs a number.")
+    if number < 0:
         raise ValueError(f"{what} must be at least 0.")
     return number
 

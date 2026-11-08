@@ -1,5 +1,5 @@
 import { useState, type InputHTMLAttributes } from "react";
-import { legalExportMode, legalFitTarget, printerLabel, removePrinterById, restorePrinter, spoolLabel } from "../../../planner.mjs";
+import { legalExportMode, legalFitTarget, printerLabel, printerRemovalNotes, removePrinterById, restorePrinter, spoolLabel } from "../../../planner.mjs";
 import { presetsFor } from "../presets";
 import { usePlanner } from "../store";
 import type { Printer, SettingsSection } from "../types";
@@ -58,14 +58,20 @@ function Section() {
 }
 
 function Printers() {
-  const { state, meta, presets, patch, showHelp } = usePlanner();
+  const { state, meta, presets, patch, showHelp, plan } = usePlanner();
   const [confirmId, setConfirmId] = useState("");
-  const [removed, setRemoved] = useState<{ printer: Printer; index: number } | null>(null);
+  const [removed, setRemoved] = useState<{ printer: Printer; index: number; mode?: string; fitTarget?: string } | null>(null);
+  const impact = (printer: Printer) => printerRemovalNotes(state.settings, state, plan?.plates, printer);
   const remove = (printer: Printer) => {
-    setRemoved({ printer: JSON.parse(JSON.stringify(printer)) as Printer, index: state.settings.printers.findIndex((row) => row.id === printer.id) });
+    setRemoved({
+      printer: JSON.parse(JSON.stringify(printer)) as Printer,
+      index: state.settings.printers.findIndex((row) => row.id === printer.id),
+      ...(state.settings.mode === printer.id ? { mode: printer.id } : {}),
+      ...(state.fitTarget === printer.id ? { fitTarget: printer.id } : {}),
+    });
     setConfirmId("");
     patch((draft) => {
-      removePrinterById(draft.settings, printer.id);
+      removePrinterById(draft.settings, printer.id, draft);
       legalExportMode(draft.settings);
       legalFitTarget(draft);
     });
@@ -97,6 +103,7 @@ function Printers() {
                 <td><input aria-label={`Profile for ${printer.id}`} value={printer.profile || ""} onChange={(event) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).profile = event.target.value; })} /></td>
                 <td>{confirmId === printer.id ? (
                   <span className="confirm-remove">
+                    {impact(printer).length ? <span className="note">{printerLabel(printer) || printer.id} is {impact(printer).join("; ")}.</span> : null}
                     <button type="button" className="btn" onClick={() => remove(printer)}>Remove {printerLabel(printer) || printer.id}</button>
                     <button type="button" className="btn" onClick={() => setConfirmId("")}>Keep</button>
                   </span>
@@ -114,7 +121,7 @@ function Printers() {
           <button type="button" className="btn" onClick={() => {
             const restore = removed;
             setRemoved(null);
-            patch((draft) => { restorePrinter(draft.settings, restore); });
+            patch((draft) => { restorePrinter(draft.settings, restore, draft); });
           }}>Undo</button>
         </p>
       ) : null}

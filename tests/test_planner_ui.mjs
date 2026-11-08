@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, legalExportMode, legalFitTarget, exportCandidates, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, footprintLine, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY, printersForExport, biggestExportPrinter, scopeLabel, loadPlannerState, defaultPlannerState, ensureFilamentIds, filamentForRole, slotIndexForRole, settingsForApi, removeFilamentById, parseSettingNumber, removePrinterById, restorePrinter, tpuRoleWarning } from "../planner.mjs";
+import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, legalExportMode, legalFitTarget, exportCandidates, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, footprintLine, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY, printersForExport, biggestExportPrinter, scopeLabel, loadPlannerState, defaultPlannerState, ensureFilamentIds, filamentForRole, slotIndexForRole, settingsForApi, removeFilamentById, parseSettingNumber, printerRemovalNotes, removePrinterById, restorePrinter, tpuRoleWarning } from "../planner.mjs";
 
 const plate = { printer: "u1", slots: [0], items: [{ part: "Guide", x: 1, y: 2, rot: 0 }] };
 const key = plateKey(plate);
@@ -473,6 +473,36 @@ const migratedIds = loadPlannerState(JSON.stringify({
 assert.equal(filamentForRole(migratedIds.settings, "main").name, "E", "numeric saved roles migrate to the spool they pointed at");
 assert.equal(defaultPlannerState(readerMeta.defaults).settings.roles.box, defaultPlannerState(readerMeta.defaults).settings.filaments[1].id);
 
+// A spool deleted on purpose stays deleted on reload; the legacy short-shelf reset must not
+// resurrect it or wipe custom roles now that shelves carry stable ids (Copilot review, PR #25).
+const shortShelf = loadPlannerState(JSON.stringify({
+  stack: { name: "kept", depth: 5, layers: [], roof: { type: "none" }, mods: {} },
+  settings: {
+    printers: readerMeta.defaults.printers,
+    filaments: [
+      { id: "gold", name: "Gold", color: "#d4af37", material: "PLA" }, { id: "silver", name: "Silver", color: "#c0c0c0", material: "PLA" },
+      { id: "bronze", name: "Bronze", color: "#cd7f32", material: "PLA" }, { id: "copper", name: "Copper", color: "#b87333", material: "TPU" },
+    ],
+    roles: { main: "gold", box: "silver", knob: "bronze", accent: "bronze", tpu: "copper" },
+    mode: "both",
+  },
+}), readerMeta);
+assert.equal(shortShelf.settings.filaments.length, 4, "a deleted spool stays deleted on reload");
+assert.equal(filamentForRole(shortShelf.settings, "main").name, "Gold", "custom roles on a short id shelf survive reload");
+const legacyShort = loadPlannerState(JSON.stringify({
+  stack: { name: "kept", depth: 5, layers: [], roof: { type: "none" }, mods: {} },
+  settings: {
+    printers: readerMeta.defaults.printers,
+    filaments: [
+      { name: "A", color: "#111111", material: "PLA" }, { name: "B", color: "#222222", material: "PLA" },
+      { name: "C", color: "#333333", material: "PLA" },
+    ],
+    roles: { main: 2, box: 1, knob: 2, accent: 1, tpu: 2 },
+    mode: "both",
+  },
+}), readerMeta);
+assert.equal(legacyShort.settings.filaments.length, readerMeta.defaults.filaments.length, "a short shelf without ids is still a legacy save and resets");
+
 // Number fields never save NaN or a non-positive dimension (#20).
 assert.deepEqual(parseSettingNumber("220", { label: "Bed X", min: 0, exclusiveMin: true }), { ok: true, value: 220 });
 assert.equal(parseSettingNumber("", { label: "Bed X" }).ok, false, "cleared field is not 0");
@@ -491,6 +521,29 @@ assert.deepEqual(undoFleet.printers.map((p) => p.id), ["a", "b", "c"], "undo res
 restorePrinter(undoFleet, removedPrinterRow);
 assert.equal(undoFleet.printers.length, 3, "double undo does not duplicate");
 assert.equal(removePrinterById(undoFleet, "missing"), null);
+
+// Removing the printer that export/fit point at explains itself, and undo restores those
+// selections unless the user changed them in between (Copilot review, PR #25).
+const impactNotes = printerRemovalNotes({ mode: "u1" }, { fitTarget: "u1" }, [{ printer: "u1" }, { printer: "p1" }], { id: "u1", enabled: true, forExport: true }).join(" ");
+assert.match(impactNotes, /only printer parts are sent to/);
+assert.match(impactNotes, /fit-check target/);
+assert.match(impactNotes, /1 plate in the current plan/);
+assert.deepEqual(printerRemovalNotes({ mode: "both" }, { fitTarget: "every" }, [], { id: "x", enabled: false, forExport: false }), [], "an unused printer needs no warning");
+const selSettings = { printers: [{ id: "u1", name: "U1", enabled: true, forExport: true }, { id: "p1", name: "P1", enabled: true, forExport: true }], mode: "u1" };
+const selState = { settings: selSettings, fitTarget: "u1" };
+const selRemoved = removePrinterById(selSettings, "u1", selState);
+legalExportMode(selSettings); legalFitTarget(selState);
+assert.equal(selSettings.mode, "both");
+assert.equal(selState.fitTarget, "every");
+restorePrinter(selSettings, selRemoved, selState);
+assert.equal(selSettings.mode, "u1", "undo restores the export selection, not just the printer");
+assert.equal(selState.fitTarget, "u1", "undo restores the fit target, not just the printer");
+const selRemovedAgain = removePrinterById(selSettings, "u1", selState);
+legalExportMode(selSettings); legalFitTarget(selState);
+selSettings.mode = "p1"; selState.fitTarget = "p1";
+restorePrinter(selSettings, selRemovedAgain, selState);
+assert.equal(selSettings.mode, "p1", "undo does not overwrite an export selection made after removal");
+assert.equal(selState.fitTarget, "p1", "undo does not overwrite a fit target made after removal");
 
 const rigidTpu = { filaments: [{ id: "pla", name: "Rigid", material: "PLA" }], roles: { tpu: "pla" } };
 assert.match(tpuRoleWarning(rigidTpu), /flexible/);

@@ -327,22 +327,45 @@ export function parseSettingNumber(raw, options = {}) {
   return { ok: true, value };
 }
 
-/** Remove a printer, returning it with its position so the UI can offer undo. */
-export function removePrinterById(settings, id) {
+/** What a printer is currently used for, spelled out before it is removed (#20). Empty when unused. */
+export function printerRemovalNotes(settings, state, plates, printer) {
+  if (!printer) return [];
+  const notes = [];
+  if (printer.enabled !== false) notes.push("enabled");
+  if (settings && settings.mode === printer.id) notes.push("the only printer parts are sent to — export will switch to all printers");
+  else if (printer.enabled !== false && printer.forExport !== false) notes.push("ticked for export");
+  if (state && state.fitTarget === printer.id) notes.push("the fit-check target — fit will switch to every printer");
+  const planned = (plates || []).filter((plate) => plate && plate.printer === printer.id).length;
+  if (planned) notes.push(`${planned} plate${planned === 1 ? "" : "s"} in the current plan — replanning will be needed`);
+  return notes;
+}
+
+/**
+ * Remove a printer, returning it with its position so the UI can offer undo.
+ * Selections that pointed at it (export mode, fit target) are captured so undo can put them back.
+ */
+export function removePrinterById(settings, id, state) {
   const printers = (settings && settings.printers) || [];
   const index = printers.findIndex((printer) => printer.id === id);
   if (index < 0) return null;
   const [printer] = printers.splice(index, 1);
-  return { printer, index };
+  const removed = { printer, index };
+  if (settings.mode === id) removed.mode = id;
+  if (state && state.fitTarget === id) removed.fitTarget = id;
+  return removed;
 }
 
-/** Undo a printer removal. A printer that is back already is not duplicated. */
-export function restorePrinter(settings, removed) {
+/** Undo a printer removal. A printer that is back already is not duplicated, and a selection the
+ * user changed since the removal is not overwritten — only one still sitting at the post-removal
+ * fallback ("both" / "every") is restored. */
+export function restorePrinter(settings, removed, state) {
   if (!settings || !removed || !removed.printer) return settings;
   if (!Array.isArray(settings.printers)) settings.printers = [];
   if (settings.printers.some((printer) => printer.id === removed.printer.id)) return settings;
   const index = Math.max(0, Math.min(removed.index || 0, settings.printers.length));
   settings.printers.splice(index, 0, removed.printer);
+  if (removed.mode && settings.mode === "both") settings.mode = removed.mode;
+  if (removed.fitTarget && state && state.fitTarget === "every") state.fitTarget = removed.fitTarget;
   return settings;
 }
 
@@ -489,7 +512,12 @@ export function loadPlannerState(raw, meta) {
     if (!saved || !saved.stack || !saved.settings) return fresh();
     const blank = JSON.parse(JSON.stringify(defaults));
     saved.settings = { ...blank, ...saved.settings };
-    if (!saved.settings.filaments || saved.settings.filaments.length < 5 || !("box" in (saved.settings.roles || {}))) {
+    // A short shelf used to mean a pre-5-spool legacy save and was reset to defaults. A shelf whose
+    // spools carry stable ids is a current save: the user may have deleted a spool on purpose, and
+    // resetting would resurrect it and wipe their role assignments.
+    const shelf = saved.settings.filaments;
+    const idShelf = Array.isArray(shelf) && shelf.length > 0 && shelf.every((filament) => filament && typeof filament.id === "string" && filament.id);
+    if (!idShelf && (!shelf || shelf.length < 5 || !("box" in (saved.settings.roles || {})))) {
       saved.settings.filaments = blank.filaments;
       saved.settings.roles = blank.roles;
     }
