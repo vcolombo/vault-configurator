@@ -217,7 +217,7 @@ function LayerCard({ index }: { index: number }) {
           className="grip icon-btn"
           data-grip-index={index}
           title="Drag to reorder"
-          aria-label={`Reorder ${title}. Drag, or focus and use the arrow keys.`}
+          aria-label={`Reorder ${title}. Drag, or focus and use the arrow keys. Activate to edit.`}
           onClick={() => store.setExpandedLayer(index)}
           onKeyDown={(event) => {
             const delta = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;

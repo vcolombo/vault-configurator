@@ -379,6 +379,10 @@ test("the layer grip reorders from the keyboard and keeps focus on the moved lay
   const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
   expect(saved.stack.layers.map((row: { height: number }) => row.height)).toEqual([4, 1]);
   await vi.waitFor(() => expect(document.activeElement?.getAttribute("data-grip-index")).toBe("0"));
+  // Activation opens the editor, as the grip's name ("Activate to edit") says.
+  expect(screen.getAllByRole("button", { name: /Edit .*drawer/i }).every((btn) => btn.getAttribute("aria-expanded") === "false")).toBe(true);
+  await user.click(screen.getAllByRole("button", { name: /Activate to edit/ })[0]);
+  expect(screen.getAllByRole("button", { name: /Edit .*drawer/i }).some((btn) => btn.getAttribute("aria-expanded") === "true")).toBe(true);
 });
 
 test("loading Spoolman spools can fill a filament slot", async () => {

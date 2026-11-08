@@ -808,6 +808,10 @@
     .page, .topbar {
       padding-inline: 0.9rem;
     }
+    .fit-controls {
+      flex-shrink: 1;
+      min-inline-size: 0;
+    }
     .tabs {
       gap: 0.9rem;
       padding-inline: 0.9rem;
@@ -820,9 +824,17 @@
       flex-direction: row;
       flex-wrap: wrap;
     }
+    /* Anchor the Load menu to the topbar, not the trigger: right-aligning to
+       .load clips it offscreen whenever Load wraps to a row start. */
+    .topbar {
+      position: relative;
+    }
+    .load {
+      position: static;
+    }
     .menu {
-      inset-inline-end: 0;
-      max-inline-size: calc(100vw - 1.8rem);
+      inset-inline: 0.9rem;
+      min-inline-size: 0;
     }
   }
 }
