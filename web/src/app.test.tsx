@@ -226,6 +226,30 @@ test("removing the printer export and fit point at says so, and undo restores bo
   expect(afterUndo.fitTarget).toBe("u1");
 });
 
+test("undo after the user re-picks a fit target keeps the newer choice", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "plates",
+    fitTarget: "u1",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults, mode: "u1" },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Plates & export" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Remove U1" }));
+  await user.click(screen.getByRole("button", { name: "Remove U1" }));
+  // The user picks a new fit target in the header, then switches back to All printers:
+  // that explicit "every" is a newer choice, not the untouched removal fallback.
+  await user.selectOptions(screen.getByLabelText("All printers"), "p1s");
+  await user.selectOptions(screen.getByLabelText("All printers"), "every");
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  const afterUndo = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
+  expect(afterUndo.settings.printers.some((printer: { id: string }) => printer.id === "u1")).toBe(true);
+  expect(afterUndo.fitTarget).toBe("every");
+  expect(afterUndo.settings.mode).toBe("u1");
+});
+
 test("a BOM result keeps an assemble check and a stale stack is dropped", () => {
   const layer = {
     type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",

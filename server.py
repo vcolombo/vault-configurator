@@ -132,11 +132,13 @@ def _validate_settings(s):
         _positive(p.get("z"), f"{name} Z")
         if p.get("maxH") is not None:
             _positive(p["maxH"], f"{name} max part height")
+    # These keys always exist after the defaults merge; an explicit JSON null overwrites the
+    # default and must fail here with the field name, not as a TypeError in the estimate.
     for key in ("spacing", "edge", "infill"):
-        if s.get(key) is not None:
+        if key in s:
             _nonnegative(s[key], key)
     for key in ("wallMm", "secondsPerGram", "density"):
-        if s.get(key) is not None:
+        if key in s:
             _positive(s[key], key)
 
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, legalExportMode, legalFitTarget, exportCandidates, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, footprintLine, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY, printersForExport, biggestExportPrinter, scopeLabel, loadPlannerState, defaultPlannerState, ensureFilamentIds, filamentForRole, slotIndexForRole, settingsForApi, removeFilamentById, parseSettingNumber, printerRemovalNotes, removePrinterById, restorePrinter, tpuRoleWarning } from "../planner.mjs";
+import { reconcileProgress, plateKey, partFitsScope, layerNotes, migratePrinters, migrateShop, legalExportMode, legalFitTarget, exportCandidates, LEGACY_FILAMENTS, LEGACY_ROLE_NAMES, LEGACY_PRINTER_NAMES, decorateChoices, visiblePartRows, checkedCount, depthLabel, repairStackCatalog, catalogChoicesFor, printerLabel, footprintLine, spoolLabel, normalizeTheme, themeIsDark, THEME_STORAGE_KEY, printersForExport, biggestExportPrinter, scopeLabel, loadPlannerState, defaultPlannerState, ensureFilamentIds, filamentForRole, slotIndexForRole, settingsForApi, removeFilamentById, restoreFilament, parseSettingNumber, printerRemovalNotes, removePrinterById, restorePrinter, tpuRoleWarning } from "../planner.mjs";
 
 const plate = { printer: "u1", slots: [0], items: [{ part: "Guide", x: 1, y: 2, rot: 0 }] };
 const key = plateKey(plate);
@@ -457,6 +457,48 @@ assert.equal(filamentForRole(idSettings, "main").name, idSettings.filaments[0].n
 assert.equal(removeFilamentById(idSettings, "missing"), null);
 assert.equal(removeFilamentById({ filaments: [{ id: "only", name: "x" }], roles: {} }, "only"), null, "the last filament stays");
 
+// Spool removal is undoable: the spool returns to its shelf slot and roles that fell back
+// point at it again, unless the user reassigned them in between (Copilot review, PR #25).
+const undoShelf = {
+  filaments: [{ id: "charcoal", name: "Charcoal" }, { id: "gold", name: "Gold" }, { id: "cream", name: "Cream" }],
+  roles: { main: "gold", box: "cream" },
+};
+const spoolRemoved = removeFilamentById(undoShelf, "gold");
+assert.equal(undoShelf.roles.main, "charcoal", "the role falls back to the first remaining spool");
+restoreFilament(undoShelf, spoolRemoved);
+assert.deepEqual(undoShelf.filaments.map((f) => f.id), ["charcoal", "gold", "cream"], "undo returns the spool to its shelf position");
+assert.equal(undoShelf.roles.main, "gold", "undo points the fallen-back role back at the restored spool");
+restoreFilament(undoShelf, spoolRemoved);
+assert.equal(undoShelf.filaments.length, 3, "double undo does not duplicate the spool");
+const spoolRemovedAgain = removeFilamentById(undoShelf, "gold");
+undoShelf.roles.main = "cream";
+restoreFilament(undoShelf, spoolRemovedAgain);
+assert.equal(undoShelf.roles.main, "cream", "undo does not overwrite a role reassigned after removal");
+
+// Add -> remove -> add: the second add must not reuse the removed spool's id while its
+// Undo is still pending, or restoring it would collide and lose the original spool.
+const addShelf = {
+  filaments: [{ id: "charcoal", name: "Charcoal", color: "#222222", material: "PLA", preset: {} }],
+  roles: { main: "charcoal" },
+};
+addShelf.filaments.push({ name: "New filament", color: "#8a8f96", material: "PLA", preset: {} });
+ensureFilamentIds(addShelf);
+const addedSpool = addShelf.filaments[1];
+assert.equal(addedSpool.id, "new-filament");
+addedSpool.name = "Gold";
+addedSpool.color = "#d4af37";
+addShelf.roles.main = addedSpool.id;
+const addedRemoved = removeFilamentById(addShelf, addedSpool.id);
+assert.equal(addShelf.roles.main, "charcoal");
+addShelf.filaments.push({ name: "New filament", color: "#8a8f96", material: "PLA", preset: {} });
+ensureFilamentIds(addShelf, [addedRemoved.filament.id]);
+assert.notEqual(addShelf.filaments[1].id, "new-filament", "the second add cannot take the pending undo spool's id");
+restoreFilament(addShelf, addedRemoved);
+assert.equal(addShelf.filaments.length, 3, "undo still restores the original spool after the second add");
+assert.equal(new Set(addShelf.filaments.map((f) => f.id)).size, 3, "ids stay unique");
+assert.equal(filamentForRole(addShelf, "main").name, "Gold", "the restored spool keeps its own data and role");
+assert.equal(filamentForRole(addShelf, "main").color, "#d4af37");
+
 const migratedIds = loadPlannerState(JSON.stringify({
   stack: { name: "kept", depth: 5, layers: [], roof: { type: "none" }, mods: {} },
   settings: {
@@ -574,4 +616,4 @@ const idlessFirst = {
 };
 ensureFilamentIds(idlessFirst);
 assert.equal(filamentForRole(idlessFirst, "box").name, "Custom", "an id-less row cannot take the next spool's id either");
-assert.match(readFileSync(new URL("../index.html", import.meta.url), "utf8"), /#addFilament'\)\.onclick=[\s\S]{0,200}ensureFilamentIds\(state\.settings\)/, "classic mints an id when a filament is added");
+assert.match(readFileSync(new URL("../index.html", import.meta.url), "utf8"), /#addFilament'\)\.onclick=[\s\S]{0,200}ensureFilamentIds\(state\.settings,removedFilament\?\[removedFilament\.filament\.id\]:\[\]\)/, "classic mints an id when a filament is added, reserving the pending undo spool's id");

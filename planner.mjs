@@ -236,11 +236,14 @@ function filamentSlug(name) {
  * A numeric saved role is converted once, to the spool it pointed at. Reordering or
  * removing shelf stock afterwards cannot retarget a role.
  */
-export function ensureFilamentIds(settings) {
+export function ensureFilamentIds(settings, extraReserved) {
   if (!settings || !Array.isArray(settings.filaments)) return settings;
   // Reserve every id already present up front: repairing an earlier missing/duplicate id
   // must never steal a later spool's valid id (the first owner of a duplicate keeps it).
+  // Callers may reserve more ids (a spool whose removal can still be undone) so a freshly
+  // minted spool cannot take an id that Undo is about to restore.
   const reserved = new Set(settings.filaments.map((filament) => filament.id).filter((id) => typeof id === "string" && id));
+  (extraReserved || []).forEach((id) => { if (typeof id === "string" && id) reserved.add(id); });
   const used = new Set();
   settings.filaments.forEach((filament) => {
     let id = typeof filament.id === "string" && filament.id ? filament.id : "";
@@ -309,7 +312,23 @@ export function removeFilamentById(settings, id) {
       affectedRoles.push(role);
     }
   });
-  return { filament, index, affectedRoles };
+  return { filament, index, affectedRoles, fallbackId: fallback };
+}
+
+/** Undo a spool removal. A spool that is back already is not duplicated. An affected role is
+ * pointed back at the restored spool only while it still sits at the removal fallback — a role
+ * the user reassigned since (the UIs also drop it from affectedRoles) is left alone. */
+export function restoreFilament(settings, removed) {
+  if (!settings || !removed || !removed.filament) return settings;
+  if (!Array.isArray(settings.filaments)) settings.filaments = [];
+  if (settings.filaments.some((filament) => filament.id === removed.filament.id)) return settings;
+  const index = Math.max(0, Math.min(removed.index || 0, settings.filaments.length));
+  settings.filaments.splice(index, 0, removed.filament);
+  if (!settings.roles || typeof settings.roles !== "object") settings.roles = {};
+  (removed.affectedRoles || []).forEach((role) => {
+    if (settings.roles[role] === removed.fallbackId) settings.roles[role] = removed.filament.id;
+  });
+  return settings;
 }
 
 /** Parse a settings number field. Empty or non-numeric text is an error, never 0 or NaN. */
