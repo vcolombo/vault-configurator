@@ -333,6 +333,29 @@ test("controls that cannot act are disabled before interaction", async () => {
   expect(exportTests).toBeEnabled();
 });
 
+test("geared rails stays toggleable when only one bay is split", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "SS", height: 2, facades: [[1, 1], [2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /Edit .*drawer/i }));
+  // The split bay always gets rails in the BOM; the toggle still decides the unsplit bay.
+  const rails = screen.getByRole("checkbox", { name: /geared rails \(split bays always include them\)/ });
+  expect(rails).not.toBeChecked();
+  expect(rails).toBeEnabled();
+  await user.click(rails);
+  expect(JSON.parse(localStorage.getItem("vault-configurator") || "{}").stack.layers[0].rails).toBe(true);
+});
+
 test("loading Spoolman spools can fill a filament slot", async () => {
   const user = userEvent.setup();
   localStorage.setItem("vault-configurator", JSON.stringify({

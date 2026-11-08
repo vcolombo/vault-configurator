@@ -271,7 +271,7 @@ function LayerCard({ index }: { index: number }) {
                 </select>
               </label>
               <Flag index={index} field="labels" label="labels" help="labels" />
-              <Flag index={index} field="rails" label="geared rails" help="rails" forced={(layer.facades || []).some((faces) => faces.length > 1)} />
+              <Flag index={index} field="rails" label="geared rails" help="rails" forced={(layer.facades || []).length > 0 && (layer.facades || []).every((faces) => faces.length > 1)} note={(layer.facades || []).some((faces) => faces.length > 1) && !(layer.facades || []).every((faces) => faces.length > 1) ? "split bays always include them" : undefined} />
               <Flag index={index} field="manualSupports" label="manual support wall" help="manualSupports" />
               {layer.interior === "grid" ? (
                 <>
@@ -317,7 +317,7 @@ function familyWide(family: string) {
   return family === "L" || family === "XL";
 }
 
-function Flag({ index, field, label, help, forced = false }: { index: number; field: "labels" | "rails" | "manualSupports" | "baseplate" | "dividers"; label: string; help: string; forced?: boolean }) {
+function Flag({ index, field, label, help, forced = false, note }: { index: number; field: "labels" | "rails" | "manualSupports" | "baseplate" | "dividers"; label: string; help: string; forced?: boolean; note?: string }) {
   const { state, patch, showHelp } = usePlanner();
   const layer = state.stack.layers[index];
   const checked = forced || (field === "dividers" ? !!layer.dividers : !!layer[field]);
@@ -327,14 +327,14 @@ function Flag({ index, field, label, help, forced = false }: { index: number; fi
         type="checkbox"
         checked={checked}
         disabled={forced}
-        title={forced ? "Required when a module holds more than one box" : undefined}
+        title={forced ? "Required when a module holds more than one box" : note}
         onChange={(event) => patch((draft) => {
           const row = draft.stack.layers[index];
           if (field === "dividers") row.dividers = event.target.checked;
           else row[field] = event.target.checked;
         })}
       />
-      {label}{forced ? " (required)" : ""}
+      {label}{forced ? " (required)" : note ? ` (${note})` : ""}
     </label>
   );
 }
