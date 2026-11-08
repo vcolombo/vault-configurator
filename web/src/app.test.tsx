@@ -269,6 +269,40 @@ test("ticking No tall parts on a printer with Z of 1 still saves a positive limi
   expect(u1.maxH).toBeLessThan(1);
 });
 
+test("number fields revert invalid dimensions and only persist valid commits", async () => {
+  const user = userEvent.setup();
+  const savedPrinter = () => JSON.parse(localStorage.getItem("vault-configurator") || "{}").settings.printers.find((printer: { id: string }) => printer.id === "u1");
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: { ...meta.defaults },
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+
+  const bedX = screen.getByRole("spinbutton", { name: "Bed X for u1" });
+  await user.clear(bedX);
+  await user.type(bedX, "0{Enter}");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Bed X must be above 0.");
+  expect(bedX).toHaveValue(270);
+  expect(savedPrinter().bed[0]).toBe(270);
+
+  const bedY = screen.getByRole("spinbutton", { name: "Bed Y for u1" });
+  await user.clear(bedY);
+  await user.tab();
+  expect(screen.getByText("Bed Y needs a number.")).toBeInTheDocument();
+  expect(bedY).toHaveValue(270);
+  expect(savedPrinter().bed[1]).toBe(270);
+
+  const z = screen.getByRole("spinbutton", { name: "Z for u1" });
+  await user.clear(z);
+  await user.type(z, "300");
+  await user.tab();
+  expect(z).toHaveValue(300);
+  expect(savedPrinter().z).toBe(300);
+});
+
 test("printer Undo survives leaving and returning to the Printers section", async () => {
   const user = userEvent.setup();
   localStorage.setItem("vault-configurator", JSON.stringify({
