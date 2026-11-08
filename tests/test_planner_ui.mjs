@@ -552,6 +552,8 @@ assert.match(parseSettingNumber("abc", { label: "Bed X" }).error, /Bed X needs a
 assert.match(parseSettingNumber("0", { label: "Bed X", min: 0, exclusiveMin: true }).error, /above 0/);
 assert.equal(parseSettingNumber("0", { label: "Part spacing", min: 0 }).ok, true, "zero spacing is legal");
 assert.match(parseSettingNumber("-1", { label: "Part spacing", min: 0 }).error, /at least 0/);
+assert.match(parseSettingNumber("2", { label: "Infill", min: 0, max: 1 }).error, /at most 1/, "infill is a fraction: 2 is not 200%");
+assert.deepEqual(parseSettingNumber("1", { label: "Infill", min: 0, max: 1 }), { ok: true, value: 1 });
 
 // Printer removal is undoable; the TPU role warns on a rigid spool (#20).
 const undoFleet = { printers: [{ id: "a", name: "A" }, { id: "b", name: "B" }, { id: "c", name: "C" }] };

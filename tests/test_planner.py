@@ -350,6 +350,10 @@ def test_settings_reject_nonpositive_dimensions():
         ({"settings": {"printers": [{"id": "p1", "name": "Shop printer", "bed": [float("inf"), 220], "z": 250}]}}, "Shop printer"),
         ({"settings": {"density": None}}, "density"),
         ({"settings": {"infill": None}}, "infill"),
+        ({"settings": {"infill": 2}}, "infill"),
+        ({"settings": {"printers": [{"id": "p1", "name": "Shop printer", "bed": ["220", 220], "z": 250}]}}, "Shop printer"),
+        ({"settings": {"spacing": "6"}}, "spacing"),
+        ({"settings": {"density": True}}, "density"),
     ]:
         try:
             server.settings_of(bad)

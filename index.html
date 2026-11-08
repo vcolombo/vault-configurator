@@ -383,7 +383,7 @@ const $=s=>document.querySelector(s);
 const el=(t,a={},...c)=>{const n=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k==='class')n.className=v;else if(k.startsWith('on'))n[k]=v;else if(v!==undefined&&v!==null)n.setAttribute(k,v)}for(const x of c)n.append(x);return n};
 const svg=(t,a={},...c)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',t);for(const[k,v]of Object.entries(a))n.setAttribute(k,v);for(const x of c)n.append(x);return n};
 let META=null, PRESETS=null, SPOOLS=[], state=null, bom=null, timer=null, removedPrinter=null, removedFilament=null;
-const validNum=(input,label,min,exclusiveMin)=>{const r=parseSettingNumber(input.value,{label,min,exclusiveMin});if(r.ok){input.removeAttribute('aria-invalid');input.removeAttribute('title')}else{input.setAttribute('aria-invalid','true');input.title=r.error}return r};
+const validNum=(input,label,min,exclusiveMin)=>{const max=input.max===''?undefined:Number(input.max);const r=parseSettingNumber(input.value,{label,min,exclusiveMin,max});if(r.ok){input.removeAttribute('aria-invalid');input.removeAttribute('title')}else{input.setAttribute('aria-invalid','true');input.title=r.error}return r};
 const PATTERN_NAME=p=>p.join('+')+'U';
 const LAYOUT_LABEL={S:'S',M:'M',L:'L',XL:'XL',SS:'L width · two S bays',SM:'XL width · S + M bays'};
 const ROOF_LABEL={none:'none',grid:'Gridfinity grid roof',table:'Table roof',bowl:'Bowl roof',undertable:'Under-table mount roof',heavyweight:'Heavyweight roof (L/XL)'};

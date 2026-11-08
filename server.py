@@ -96,27 +96,30 @@ def settings_of(body):
     return s
 
 
-def _positive(value, what):
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{what} needs a number.") from None
+def _number(value, what):
+    # JSON numbers only: float() would also accept numeric strings and booleans, and the
+    # original string would then crash downstream arithmetic with a TypeError.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{what} needs a number.")
+    number = float(value)
     if not math.isfinite(number):  # NaN, or infinity from JSON like 1e309
         raise ValueError(f"{what} needs a number.")
+    return number
+
+
+def _positive(value, what):
+    number = _number(value, what)
     if number <= 0:
         raise ValueError(f"{what} must be above 0.")
     return number
 
 
-def _nonnegative(value, what):
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{what} needs a number.") from None
-    if not math.isfinite(number):
-        raise ValueError(f"{what} needs a number.")
+def _nonnegative(value, what, maximum=None):
+    number = _number(value, what)
     if number < 0:
         raise ValueError(f"{what} must be at least 0.")
+    if maximum is not None and number > maximum:
+        raise ValueError(f"{what} must be at most {maximum:g}.")
     return number
 
 
@@ -134,9 +137,11 @@ def _validate_settings(s):
             _positive(p["maxH"], f"{name} max part height")
     # These keys always exist after the defaults merge; an explicit JSON null overwrites the
     # default and must fail here with the field name, not as a TypeError in the estimate.
-    for key in ("spacing", "edge", "infill"):
+    for key in ("spacing", "edge"):
         if key in s:
             _nonnegative(s[key], key)
+    if "infill" in s:
+        _nonnegative(s["infill"], "infill", maximum=1)
     for key in ("wallMm", "secondsPerGram", "density"):
         if key in s:
             _positive(s[key], key)
