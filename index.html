@@ -517,7 +517,7 @@ function baseFamily(){const l=state.stack.layers[0];return l?FAM[l.layout]:null}
 function newLayer(){const base=baseFamily();const layout=base?META.allowed[base][0]:'S';const h=FAM[layout]==='XL'?1:2;return {type:'Drawers',layout,height:h,facades:META.layouts[layout].map(()=>[h]),interior:'none',key:'key',labels:true,rails:false,manualSupports:false,variant:'Flat',baseplate:false,gridW:1,gridD:1,divW:1,divD:2}}
 /* ---------------------------------------------------------------- tabs */
 function showTab(id){state.tab=id;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-'+id));save();if(id==='plates'&&state.stack.layers.length)refreshPlan()}
-async function refreshPlan(){try{const r=await api('/api/plan',{stack:state.stack,settings:state.settings,overrides:state.overrides});syncProgress(r.plan);renderPlan(r.plan)}catch(e){const host=$('#exportStatus');if(host)host.replaceChildren(el('span',{class:'bad'},e.message))}}
+async function refreshPlan(){const epoch=planEpoch;try{const r=await api('/api/plan',{stack:state.stack,settings:state.settings,overrides:state.overrides});if(epoch!==planEpoch)return;syncProgress(r.plan);renderPlan(r.plan)}catch(e){const host=$('#exportStatus');if(host)host.replaceChildren(el('span',{class:'bad'},e.message))}}
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 
 /* ---------------------------------------------------------------- stack editor (top layer first) */
@@ -680,14 +680,14 @@ function renderSlicers(){const s=state.settings;const st=$('#slicers tbody');if(
 const thumb=(file,color,size=44)=>{if(!file)return '';const u='/thumb/'+encodeURIComponent(file),label=file.split(/[\\/]/).pop().replace(/\.stl$/i,'').replace(/┬▓/g,'²');return el('span',{class:'thumb','data-file':file,'data-color':color,'data-label':label,title:'click to open in 3D',style:`width:${size}px;height:${size}px;background:${color};-webkit-mask-image:url("${u}");mask-image:url("${u}")`},el('img',{src:u,loading:'lazy'}))};
 const slotColor=role=>{const s=state.settings;return (filamentForRole(s,role)||{}).color};
 const examples=(parts,color,n=5)=>{const seen=new Set();const out=el('span',{class:'thumbs'});parts.forEach(p=>{if(p.file&&!seen.has(p.file)&&seen.size<n){seen.add(p.file);out.append(thumb(p.file,color))}});return out};
-function removeFilament(f){const s=state.settings;if(s.filaments.length<2)return;const affected=Object.keys(s.roles||{}).filter(r=>s.roles[r]===f.id);if(affected.length){const next=s.filaments.find(x=>x.id!==f.id);if(!confirm(`Remove ${f.name||'this spool'}? ${affected.join(', ')} will print in ${next?next.name:'the first spool'} instead. You can undo right after.`))return}removedFilament=removeFilamentById(s,f.id);renderSetup();changed()}
+function removeFilament(f){const s=state.settings;if(s.filaments.length<2)return;const affected=Object.keys(s.roles||{}).filter(r=>s.roles[r]===f.id);if(affected.length){const next=s.filaments.find(x=>x.id!==f.id);if(!confirm(`Remove ${f.name||'this spool'}? ${affected.join(', ')} will print in ${next?next.name:'the first spool'} instead. You can undo right after.`))return}removedFilament=removeFilamentById(s,f.id);dropCachedPlan();renderSetup();changed()}
 function renderFilaments(){const s=state.settings,ps=s.printers.filter(p=>p.enabled);
  const ft=$('#filamentList');if(ft){ft.replaceChildren();
  const mats=[...new Set([...(META.materials||[]),...SPOOLS.map(x=>x.material).filter(Boolean),...s.filaments.map(f=>f.material).filter(Boolean)])];
  s.filaments.forEach((f,i)=>{const mat=el('select',{onchange:e=>{f.material=e.target.value;changed();renderFilaments();renderColours()}});mats.forEach(m=>mat.append(el('option',{value:m,...(f.material===m?{selected:''}:{})},m)));
   const sw=el('input',{type:'color',value:f.color,'aria-label':`Colour for ${f.name||'filament'}`,onchange:e=>{f.color=e.target.value;changed();renderColours();renderFleet()}});
   ft.append(el('div',{class:'filament-card'},sw,el('input',{type:'text',class:'grow',value:f.name,placeholder:'nickname, not a role',style:'flex:1',oninput:e=>{f.name=e.target.value;renderColours();renderFleet();save()}}),mat,el('button',{type:'button',class:'small','aria-label':`Remove ${f.name||'filament'}`,onclick:()=>removeFilament(f)},'×')))})}
- if(ft&&removedFilament)ft.append(el('p',{class:'note',role:'status'},`${removedFilament.filament.name||'Spool'} removed. `,el('button',{type:'button',class:'small',onclick:()=>{restoreFilament(s,removedFilament);removedFilament=null;renderSetup();changed()}},'Undo')));
+ if(ft&&removedFilament)ft.append(el('p',{class:'note',role:'status'},`${removedFilament.filament.name||'Spool'} removed. `,el('button',{type:'button',class:'small',onclick:()=>{restoreFilament(s,removedFilament);removedFilament=null;dropCachedPlan();renderSetup();changed()}},'Undo')));
  const sp=$('#spools tbody');sp.replaceChildren();
  // Spoolman: first the filament (brand · material), then one of the colours you own of it; identical spools are folded together
  const types={};SPOOLS.forEach(x=>{const t=`${x.vendor} · ${x.material}`.trim();const c=(types[t]=types[t]||{});const k=x.name+'|'+x.color;(c[k]=c[k]||{...x,n:0,g:0}).n++;c[k].g+=x.remaining_g||0});
@@ -784,7 +784,11 @@ function renderProfileNote(){const host=$('#profileEmpty');if(!host||!PRESETS)re
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36);
 function renderProjects(){const sel=$('#projectList');if(!sel)return;sel.replaceChildren(el('option',{value:''},'working copy'));(state.projects||[]).forEach(p=>sel.append(el('option',{value:p.id,...(p.id===state.activeProjectId?{selected:''}:{})},p.name||'untitled')))}
 
-let lastPlan=null,lastFiles=null,lastOpts=null;
+let lastPlan=null,lastFiles=null,lastOpts=null,planEpoch=0;
+/* A cached plan's plate slots are shelf positions: removing or restoring a spool shifts them, so
+   the cached plan must go (re-rendering it would recolour plates or index past the shelf end).
+   The epoch also stops a plan request that was in flight during the edit from restoring it. */
+function dropCachedPlan(){planEpoch++;lastPlan=null;lastFiles=null;lastOpts=null;const box=$('#plates');if(box&&box.childElementCount)box.replaceChildren(el('p',{class:'note'},'The filament shelf changed since this plan was made — preview the plates again.'))}
 function renderPlan(plan,files,opts={}){const box=opts.box||$('#plates');if(box===$('#plates')){lastPlan=plan;lastFiles=files;lastOpts=opts}box.replaceChildren();const s=state.settings;const name=id=>printerLabel(s.printers.find(p=>p.id===id)||{name:id});
  if(opts.synthetic)box.append(el('p',{class:'warn'},plan.label||'Synthetic sample. Not VAULT parts.'));
  else if(state.progressNote)box.append(el('p',{class:'warn'},state.progressNote));
@@ -795,7 +799,7 @@ function renderPlan(plan,files,opts={}){const box=opts.box||$('#plates');if(box=
  (plan.unplaceable||[]).forEach(u=>box.append(el('div',{class:'bad'},`✗ ${u.qty||1}× ${u.name} (${u.size.map(v=>Math.round(v)).join('×')} mm)${u.group?' · '+u.group:''}: not exported, ${u.reason||'fits no enabled printer (see the Stack tab warning for the reason)'}`)));
  if(!opts.synthetic)box.append(el('p',{class:'plate-progress note'},plateProgressText((plan.plates||[]).length)))
  let n=0;plan.plates.forEach(p=>{n++;const counts={};p.items.forEach(i=>counts[i.part]=(counts[i.part]||0)+1);
-  const card=el('div',{class:'plate'},el('div',{},el('b',{},`${name(p.printer)} · plate ${n}`),' · ',...p.slots.map(k=>el('span',{class:'chip',style:`border-color:${s.filaments[k].color}`},el('span',{class:'swatch',style:`background:${s.filaments[k].color}`}),s.filaments[k].name)),` ≈${Math.round(p.grams)} g · ≈${fmtH(p.seconds)} · max height ${Math.round(p.height)} mm`,p.fill!=null?` · bed ${Math.round(p.fill*100)}% used`:'',p.diagonal?el('span',{class:'warn'},' · placed diagonally'):''),el('div',{class:'note'},Object.entries(counts).map(([k,c])=>`${c}× ${k}`).join(' · ')));
+  const card=el('div',{class:'plate'},el('div',{},el('b',{},`${name(p.printer)} · plate ${n}`),' · ',...p.slots.map(k=>{const fil=s.filaments[k]||{color:'#c9ccd0',name:'removed spool'};return el('span',{class:'chip',style:`border-color:${fil.color}`},el('span',{class:'swatch',style:`background:${fil.color}`}),fil.name)}),` ≈${Math.round(p.grams)} g · ≈${fmtH(p.seconds)} · max height ${Math.round(p.height)} mm`,p.fill!=null?` · bed ${Math.round(p.fill*100)}% used`:'',p.diagonal?el('span',{class:'warn'},' · placed diagonally'):''),el('div',{class:'note'},Object.entries(counts).map(([k,c])=>`${c}× ${k}`).join(' · ')));
   if(p.bed)card.append(bedSvg(p));
   const split=p.items.filter(i=>i.nozzle==='split');
   if(split.length)card.append(el('p',{class:'warn'},`Cut at x = ${split.map(i=>i.splitX).join(', ')} mm into one object with a left-nozzle part and a right-nozzle part. Not marked ready to print.`));
@@ -803,14 +807,14 @@ function renderPlan(plan,files,opts={}){const box=opts.box||$('#plates');if(box=
   if(!opts.synthetic){const key=plateKey(p);const checked=!!state.progress.plates[key];card.append(el('label',{class:'check'},el('input',{type:'checkbox',...(checked?{checked:''}:{}),onchange:e=>{if(e.target.checked)state.progress.plates[key]=true;else delete state.progress.plates[key];save();const host=box.querySelector('.plate-progress');if(host)host.textContent=plateProgressText(plan.plates.length)}}),' Printed'))}
   box.append(card)});}
 
-async function runExport(path,extra,statusEl,btn){statusEl.textContent='Starting…';btn.disabled=true;const bar=$('#progressBar');bar.style.display='block';bar.firstElementChild.style.width='0%';
+async function runExport(path,extra,statusEl,btn){statusEl.textContent='Starting…';btn.disabled=true;const epoch=planEpoch;const bar=$('#progressBar');bar.style.display='block';bar.firstElementChild.style.width='0%';
  try{await api(path,{stack:state.stack,settings:state.settings,overrides:state.overrides,...extra});
   while(true){await new Promise(r=>setTimeout(r,800));const st=await (await fetch('/api/export_status')).json();bar.firstElementChild.style.width=st.percent+'%';statusEl.textContent=`${st.percent}% · ${st.msg}`;
-   if(st.error)throw new Error(st.error);if(!st.running&&st.result){syncProgress(st.result.plan);renderPlan(st.result.plan,st.result.files);
+   if(st.error)throw new Error(st.error);if(!st.running&&st.result){syncProgress(st.result.plan);if(epoch===planEpoch)renderPlan(st.result.plan,st.result.files);
     const a=el('a',{href:'/api/download',download:st.result.zip},'Download '+st.result.zip);statusEl.replaceChildren(`done in ${st.result.seconds}s · `,a);if(META.handoff==='none')a.click();
     break}}}
  catch(e){statusEl.replaceChildren(el('span',{class:'bad'},e.message))}finally{btn.disabled=false;setTimeout(()=>bar.style.display='none',1500)}}
-$('#planBtn').onclick=async()=>{$('#exportStatus').textContent='Planning…';try{const r=await api('/api/plan',{stack:state.stack,settings:state.settings,overrides:state.overrides});syncProgress(r.plan);renderPlan(r.plan);$('#exportStatus').textContent=''}catch(e){$('#exportStatus').replaceChildren(el('span',{class:'bad'},e.message))}};
+$('#planBtn').onclick=async()=>{$('#exportStatus').textContent='Planning…';const epoch=planEpoch;try{const r=await api('/api/plan',{stack:state.stack,settings:state.settings,overrides:state.overrides});if(epoch!==planEpoch){$('#exportStatus').textContent='';return}syncProgress(r.plan);renderPlan(r.plan);$('#exportStatus').textContent=''}catch(e){$('#exportStatus').replaceChildren(el('span',{class:'bad'},e.message))}};
 $('#exportBtn').onclick=()=>runExport('/api/export',{},$('#exportStatus'),$('#exportBtn'));
 $('#testBtn').onclick=()=>{const kinds=Object.entries(state.tests).filter(([k,v])=>v).map(([k])=>k);if(!kinds.length){$('#testStatus').textContent='Tick at least one group.';return}runExport('/api/export_test',{kinds},$('#testStatus'),$('#testBtn'))};
 $('#rescan').onclick=async()=>{PRESETS=await (await fetch('/api/presets')).json();renderSetup();presetStatus()};
