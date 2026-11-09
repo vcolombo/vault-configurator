@@ -583,6 +583,45 @@ test("the Plates footer does not count files exported for an earlier build", asy
   expect(screen.queryByText(/1 file exported\./)).not.toBeInTheDocument();
 });
 
+test("an export that finishes after the build changed does not overwrite the newer plan", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "plates",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  let releaseStatus: (() => void) | undefined;
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/export_status")) {
+      // Held open until the test releases it: the export of the old build is still running.
+      return new Promise<Response>((resolve) => {
+        releaseStatus = () => void json({ running: false, percent: 100, result: { plan: { plates: [{ printer: "u1", items: [] }], unplaceable: [{ name: "Roof" }], pieces: 1, placed: 0, fingerprint: "export-plan" }, files: [{ file: "stack-u1.3mf", plates: 1, items: 2 }], seconds: 1, zip: "stack.zip" } }).then(resolve);
+      });
+    }
+    if (url.includes("/api/export")) return json({ ok: true });
+    return base(input, init);
+  }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Plates & export" });
+  await user.click(screen.getByRole("button", { name: "Export 3MF" }));
+  await waitFor(() => expect(releaseStatus).toBeDefined(), { timeout: 5000 });
+  // The build changes mid-export; the plan effect answers with the new plan (0 plates).
+  await user.selectOptions(screen.getByLabelText("All printers"), "u1");
+  expect(await screen.findByText(/0 plates planned/)).toBeInTheDocument();
+  releaseStatus!();
+  // The finished export keeps its files, labeled stale, but must not replace the plan.
+  expect(await screen.findByText(/exported files are for an earlier build/)).toBeInTheDocument();
+  expect(screen.getByText(/0 plates planned/)).toBeInTheDocument();
+  expect(screen.queryByText(/1 plate planned/)).not.toBeInTheDocument();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

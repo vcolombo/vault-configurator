@@ -525,7 +525,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             setExportStatus(`${report.percent ?? 0}% · ${report.msg || ""}`);
             if (report.error) throw new Error(report.error);
             if (!report.running && report.result) {
-              setPlan(report.result.plan);
+              // The build may have changed while exporting: keep the files (exportSig
+              // labels them stale) but do not overwrite the newer plan with this one.
+              if (stateRef.current && signature(stateRef.current) === requestSig) setPlan(report.result.plan);
               setExportFiles(report.result.files || []);
               setExportSig(requestSig);
               setExportStatus(`done in ${report.result.seconds}s`);
