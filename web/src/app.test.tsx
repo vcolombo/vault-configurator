@@ -443,6 +443,82 @@ test("assembly counts ignore checks left over from an earlier stack", async () =
   expect(screen.getByText(/0\/0 hardware lines · 0\/0 assembly lines checked/)).toBeInTheDocument();
 });
 
+function stubBom(parts: unknown[], hardware: unknown[]) {
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const response = await base(input, init);
+    if (!String(input).includes("/api/bom")) return response;
+    const body = await response.json() as Record<string, unknown>;
+    return json({ ...body, parts, hardware });
+  }));
+}
+
+test("each step ends with a readiness line and a next action that never blocks, with millimetres beside the U counts", async () => {
+  const user = userEvent.setup();
+  const layer = (height: number) => ({
+    type: "Drawers", layout: "S", height, facades: [[height]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  });
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [layer(2), layer(1)], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBom(
+    [
+      { group: "L1 Drawer", name: "Box", qty: 2, role: "box", file: "box.stl", size: [100, 100, 40] },
+      { group: "L1 Drawer", name: "Knob", qty: 1, role: "knob", file: "", size: [10, 10, 10] },
+    ],
+    [],
+  );
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  // 99.5 + 51.5 mm of sheet plus 5 mm between the two layers.
+  expect(screen.getByText("2 layers · 3U · 156.0 mm tall.")).toBeInTheDocument();
+  expect(screen.getByText("2U · 99.5 mm")).toBeInTheDocument();
+  expect(screen.getByText("1U · 51.5 mm")).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Continue to colours" }));
+  expect(await screen.findByRole("heading", { name: "Parts & colours" })).toBeInTheDocument();
+  expect(await screen.findByText(/3 pieces · 1 part has its file missing from the archive/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Review plates" }));
+  expect(await screen.findByRole("heading", { name: "Plates & export" })).toBeInTheDocument();
+  expect(screen.getByText(/nothing exported yet\. You can start assembling before you export\./)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Continue to assemble" }));
+  expect(await screen.findByRole("heading", { name: "Assemble" })).toBeInTheDocument();
+});
+
+test("Assembly complete appears only once every hardware and assembly line is checked", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "assemble",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+    progress: { layoutKey: "", plates: {}, hardware: { Screws: { qty: 4, done: true } }, assemble: { "L1 Drawer|Box": { qty: 1, done: false } } },
+  }));
+  stubBom([{ group: "L1 Drawer", name: "Box", qty: 1, role: "box", file: "box.stl" }], [{ item: "Screws", qty: 4 }]);
+  render(<App />);
+  expect(await screen.findByText(/1\/1 hardware lines · 0\/1 assembly lines checked/)).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Assembly complete" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "1× Box" }));
+  expect(screen.getByRole("heading", { name: "Assembly complete" })).toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "1× Box" }));
+  expect(screen.queryByRole("heading", { name: "Assembly complete" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "1× Box" }));
+  await user.click(screen.getByRole("button", { name: "Review checklist again" }));
+  expect(screen.queryByRole("heading", { name: "Assembly complete" })).not.toBeInTheDocument();
+  expect(screen.getByText(/0\/1 hardware lines · 0\/1 assembly lines checked/)).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "1× Box" })).not.toBeChecked();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

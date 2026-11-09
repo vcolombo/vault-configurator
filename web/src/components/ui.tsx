@@ -142,3 +142,13 @@ export function Card({ title, extra, children }: { title: string; extra?: ReactN
     </section>
   );
 }
+
+/** End-of-step footer: what is true about this step now, and one way onward. Never a gate. */
+export function StepFooter({ ready, next, onNext }: { ready: string; next: string; onNext: () => void }) {
+  return (
+    <footer className="step-footer">
+      <p className="note">{ready}</p>
+      <button type="button" className="btn primary" onClick={onNext}>{next}</button>
+    </footer>
+  );
+}
