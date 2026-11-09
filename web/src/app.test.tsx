@@ -685,6 +685,19 @@ test("Plates blocks export and says why when part files are missing from the arc
   expect(await screen.findByRole("heading", { name: "Compose your stack" })).toBeInTheDocument();
 });
 
+test("Plates explains an empty stack instead of leaving Preview and Export unexplained", async () => {
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "plates",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Plates & export" });
+  expect(screen.getByText("Nothing to export yet — add a layer on Design.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Export 3MF" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Preview plates" })).toBeDisabled();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

@@ -14,6 +14,8 @@ export function Plates() {
   const unplaceable = plan?.unplaceable?.length || 0;
   // Readiness comes from the current BOM; while it is stale the server still refuses a bad export.
   const partLines = store.bom?.parts || [];
+  // Empty is known from the stack itself: with no layers the BOM stays null (and "stale") by design.
+  const emptyStack = !state.stack.layers.length;
   const missingLines = store.bomStale ? [] : missingFileLines(partLines);
   const missingPieces = missingLines.reduce((sum, part) => sum + Number(part.qty || 0), 0);
   const canExport = partLines.length > 0 && !missingLines.length && packing.length > 0;
@@ -69,7 +71,7 @@ export function Plates() {
             <button type="button" className="btn ghost" onClick={() => store.setTab("stack")}>Point the planner at your VAULT folder</button>
           </p>
         ) : null}
-        {!partLines.length && !store.bomStale ? <p className="note">Nothing to export yet — add a layer on Design.</p> : null}
+        {emptyStack ? <p className="note">Nothing to export yet — add a layer on Design.</p> : null}
         {partLines.length && plan && !plan.plates.length && !plan.synthetic && !missingLines.length ? (
           <p className="warn">No plates could be planned{unplaceable ? `: ${unplaceable} ${unplaceable === 1 ? "part does" : "parts do"} not fit any export printer (see below)` : ""}.</p>
         ) : null}
