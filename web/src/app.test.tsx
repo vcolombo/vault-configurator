@@ -622,6 +622,39 @@ test("an export that finishes after the build changed does not overwrite the new
   expect(screen.queryByText(/1 plate planned/)).not.toBeInTheDocument();
 });
 
+test("a test-plate export neither replaces the stack plan nor counts as the stack export", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "plates",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/export_status")) return json({ running: false, percent: 100, result: { plan: { plates: [{ printer: "u1", items: [] }], unplaceable: [], pieces: 1, placed: 1, fingerprint: "test-plan" }, files: [{ file: "test-module.3mf", plates: 1, items: 1 }], seconds: 1, zip: "test.zip" } });
+    if (url.includes("/api/export")) return json({ ok: true });
+    return base(input, init);
+  }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Plates & export" });
+  expect(await screen.findByText(/0 plates planned/)).toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: "module" }));
+  await user.click(screen.getByRole("button", { name: "Export test plates" }));
+  expect(await screen.findByText(/test plates exported\./, undefined, { timeout: 5000 })).toBeInTheDocument();
+  // The stack plan (0 plates from /api/plan) survives; the test plan is not shown as it.
+  expect(screen.getByText(/0 plates planned/)).toBeInTheDocument();
+  expect(screen.queryByText(/1 plate planned/)).not.toBeInTheDocument();
+  // Changing the picked test groups makes those files an earlier selection.
+  await user.click(screen.getByRole("checkbox", { name: "module" }));
+  expect(screen.getByText(/test plates exported for an earlier selection/)).toBeInTheDocument();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {
