@@ -375,10 +375,14 @@ test("the layer grip reorders from the keyboard and keeps focus on the moved lay
   expect(grips).toHaveLength(2);
   grips[0].focus();
   expect(grips[0]).toHaveFocus();
-  await user.keyboard("{ArrowDown}"); // toward the base: index 1 -> 0
+  // Two rapid ArrowDowns (toward the base: index 1 -> 0) with no frame between
+  // them: the second must land on the moved layer's grip and stop at the
+  // boundary, not swap the layers back.
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+  fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
   const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
   expect(saved.stack.layers.map((row: { height: number }) => row.height)).toEqual([4, 1]);
-  await vi.waitFor(() => expect(document.activeElement?.getAttribute("data-grip-index")).toBe("0"));
+  expect(document.activeElement?.getAttribute("data-grip-index")).toBe("0");
   // Activation opens the editor, as the grip's name ("Activate to edit") says.
   expect(screen.getAllByRole("button", { name: /Edit .*drawer/i }).every((btn) => btn.getAttribute("aria-expanded") === "false")).toBe(true);
   await user.click(screen.getAllByRole("button", { name: /Activate to edit/ })[0]);

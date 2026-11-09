@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { footprintLine } from "../../../planner.mjs";
 import { HELP } from "../help";
 import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, labeledChoices, layerTitle, patternName, roleColor } from "../labels";
@@ -225,10 +226,12 @@ function LayerCard({ index }: { index: number }) {
             event.preventDefault();
             const target = index + delta;
             if (target < 0 || target >= state.stack.layers.length) return;
-            store.moveLayer(index, delta);
             // Focus follows the moved layer: cards are keyed by index, so the
             // focused button would otherwise end up on the layer that swapped in.
-            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-grip-index="${target}"]`)?.focus());
+            // flushSync renders the swap now, so a fast second keypress lands
+            // on the moved layer's grip instead of undoing the move.
+            flushSync(() => store.moveLayer(index, delta));
+            document.querySelector<HTMLElement>(`[data-grip-index="${target}"]`)?.focus();
           }}
         >
           <Grip />
