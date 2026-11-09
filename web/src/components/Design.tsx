@@ -392,9 +392,17 @@ function HelpCard() {
   const { helpTopic } = usePlanner();
   const block = HELP[helpTopic];
   const ref = useRef<HTMLElement>(null);
-  // Help updates as fields are focused; keep it reachable in the side column.
+  // Help updates as fields are focused. On desktop keep it reachable by scrolling
+  // only the sticky side column — never the page; in the single-column layout it
+  // updates in place (a page jump on every focus would lose the field).
   useEffect(() => {
-    if (helpTopic && typeof ref.current?.scrollIntoView === "function") ref.current.scrollIntoView({ block: "nearest" });
+    const el = ref.current;
+    const scroller = el?.closest(".col.side");
+    if (!helpTopic || !el || !scroller || !window.matchMedia("(min-width: 901px)").matches) return;
+    const view = scroller.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    if (box.bottom > view.bottom) scroller.scrollTop += box.bottom - view.bottom;
+    else if (box.top < view.top) scroller.scrollTop -= view.top - box.top;
   }, [helpTopic]);
   return (
     <section className="card" id="help" ref={ref}>
