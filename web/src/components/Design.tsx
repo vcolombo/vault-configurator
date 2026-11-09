@@ -389,7 +389,7 @@ function NumberField({ index, field, label }: { index: number; field: "gridW" | 
 }
 
 function HelpCard() {
-  const { helpTopic } = usePlanner();
+  const { helpTopic, helpSerial } = usePlanner();
   const block = HELP[helpTopic];
   const ref = useRef<HTMLElement>(null);
   // Help updates as fields are focused. On desktop keep it reachable by scrolling
@@ -401,9 +401,11 @@ function HelpCard() {
     if (!helpTopic || !el || !scroller || !window.matchMedia("(min-width: 901px)").matches) return;
     const view = scroller.getBoundingClientRect();
     const box = el.getBoundingClientRect();
-    if (box.bottom > view.bottom) scroller.scrollTop += box.bottom - view.bottom;
-    else if (box.top < view.top) scroller.scrollTop -= view.top - box.top;
-  }, [helpTopic]);
+    // A card taller than the column's viewport aligns by its top, so the
+    // heading stays reachable; one that fits scrolls by its nearest edge.
+    if (box.height > view.height || box.top < view.top) scroller.scrollTop -= view.top - box.top;
+    else if (box.bottom > view.bottom) scroller.scrollTop += box.bottom - view.bottom;
+  }, [helpTopic, helpSerial]);
   return (
     <section className="card" id="help" ref={ref}>
       <h2>Help</h2>
