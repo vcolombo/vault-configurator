@@ -743,21 +743,29 @@ test("collapsed layer rows summarise boxes, interior, and a non-default lock", a
     labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
     gridW: 2, gridD: 3, divW: 1, divD: 2,
   };
-  const sustainer = {
+  // Catalog gates: L bodies take the variant (flag inactive), S bodies take
+  // the dividers flag (variant inactive) — the summary must agree.
+  const sealedSustainer = {
+    type: "Sustainers", layout: "L", height: 1, facades: [[1]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Sealed", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2, dividers: true,
+  };
+  const dividedSustainer = {
     type: "Sustainers", layout: "S", height: 1, facades: [[1]], interior: "none", key: "key",
     labels: true, rails: false, manualSupports: false, variant: "Sealed", baseplate: false,
     gridW: 1, gridD: 1, divW: 1, divD: 2, dividers: true,
   };
   localStorage.setItem("vault-configurator", JSON.stringify({
     tab: "stack",
-    stack: { name: "my-vault", depth: 5, layers: [drawer, sustainer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    stack: { name: "my-vault", depth: 5, layers: [drawer, sealedSustainer, dividedSustainer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
     settings: meta.defaults,
   }));
   stubBom([], []);
   render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
   expect(screen.getByText("2 boxes · grid 2×3 · hidden key")).toBeInTheDocument();
-  expect(screen.getByText("sealed · dividers")).toBeInTheDocument();
+  expect(screen.getByText("sealed")).toBeInTheDocument();
+  expect(screen.getByText("dividers")).toBeInTheDocument();
 });
 
 test("a test-plate group removed from the stack no longer enables export", async () => {

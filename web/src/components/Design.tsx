@@ -247,9 +247,9 @@ function LayerCard({ index }: { index: number }) {
         >
           <Grip />
         </button>
-        <button type="button" className="name" aria-expanded={open} aria-label={`Edit ${title}`} onClick={() => store.setExpandedLayer(open ? null : index)}>
+        <button type="button" className="name" aria-expanded={open} aria-label={`Edit ${title}`} aria-describedby={`layer-${index}-summary`} onClick={() => store.setExpandedLayer(open ? null : index)}>
           <span>{title}{notes.some(isMisfitNote) ? <span className="bad"> · does not fit</span> : null}</span>
-          <span className="layer-summary">{layerSummary(layer)}</span>
+          <span className="layer-summary" id={`layer-${index}-summary`}>{layerSummary(layer)}</span>
         </button>
         <span className="pill">{heightLabel(layer.height)}</span>
         <button type="button" className="icon-btn" aria-label={`Remove ${title}`} onClick={() => store.removeLayer(index)}>×</button>
@@ -392,19 +392,11 @@ function HelpCard() {
   const { helpTopic, helpSerial } = usePlanner();
   const block = HELP[helpTopic];
   const ref = useRef<HTMLElement>(null);
-  // Help updates as fields are focused. On desktop keep it reachable by scrolling
-  // only the sticky side column — never the page; in the single-column layout it
-  // updates in place (a page jump on every focus would lose the field).
+  // Help updates as fields are focussed and scrolls inside its own card (the
+  // sticky column gives it whatever height the Preview leaves), so a new
+  // topic starts at its heading. The page and the focussed field never move.
   useEffect(() => {
-    const el = ref.current;
-    const scroller = el?.closest(".col.side");
-    if (!helpTopic || !el || !scroller || !window.matchMedia("(min-width: 901px)").matches) return;
-    const view = scroller.getBoundingClientRect();
-    const box = el.getBoundingClientRect();
-    // A card taller than the column's viewport aligns by its top, so the
-    // heading stays reachable; one that fits scrolls by its nearest edge.
-    if (box.height > view.height || box.top < view.top) scroller.scrollTop -= view.top - box.top;
-    else if (box.bottom > view.bottom) scroller.scrollTop += box.bottom - view.bottom;
+    if (ref.current) ref.current.scrollTop = 0;
   }, [helpTopic, helpSerial]);
   return (
     <section className="card" id="help" ref={ref}>

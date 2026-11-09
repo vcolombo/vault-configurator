@@ -59,8 +59,10 @@ export function stackHeightMm(layers: Array<{ height: number }>, roof: string | 
 export function layerSummary(layer: Layer): string {
   const parts: string[] = [];
   if (layer.type === "Sustainers") {
-    parts.push(INTERIOR_LABEL[layer.variant] || "flat");
-    if (layer.dividers) parts.push("dividers");
+    // Mirror catalog.py: L/XL bodies take the variant, S/M bodies take the
+    // dividers flag; the other setting is stored but inactive.
+    if (layer.layout === "L" || layer.layout === "XL") parts.push(INTERIOR_LABEL[layer.variant] || "flat");
+    else if (layer.dividers) parts.push("dividers");
   } else {
     const boxes = (layer.facades || []).reduce((sum, bay) => sum + bay.length, 0);
     if (boxes > 1) parts.push(`${boxes} boxes`);
