@@ -1,5 +1,5 @@
 import { catalogChoicesFor, depthLabel, filamentForRole } from "../../planner.mjs";
-import type { Filament, Settings } from "./types";
+import type { Filament, Layer, Settings } from "./types";
 
 export const ROLE_SHORT: Record<string, string> = {
   main: "Body",
@@ -53,6 +53,22 @@ export function stackHeightMm(layers: Array<{ height: number }>, roof: string | 
   return layers.reduce((sum, layer) => sum + (SHEET_H[layer.height] || 0), 0)
     + Math.max(0, layers.length - 1) * 5
     + (ROOF_MM[roof || "none"] || 0);
+}
+
+/** One scannable line for a collapsed layer row: boxes, interior, and a non-default lock. */
+export function layerSummary(layer: Layer): string {
+  const parts: string[] = [];
+  if (layer.type === "Sustainers") {
+    parts.push(INTERIOR_LABEL[layer.variant] || "flat");
+    if (layer.dividers) parts.push("dividers");
+  } else {
+    const boxes = (layer.facades || []).reduce((sum, bay) => sum + bay.length, 0);
+    if (boxes > 1) parts.push(`${boxes} boxes`);
+    parts.push(layer.interior === "grid" ? `grid ${layer.gridW}×${layer.gridD}` : (INTERIOR_LABEL[layer.interior] || layer.interior));
+    if (layer.key === "hidden") parts.push("hidden key");
+    else if (layer.key === "none") parts.push("no lock");
+  }
+  return parts.join(" · ");
 }
 
 export type ChoiceOption = {

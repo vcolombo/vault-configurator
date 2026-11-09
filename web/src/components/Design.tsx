@@ -1,7 +1,8 @@
+import { useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
 import { footprintLine, partFitsScope } from "../../../planner.mjs";
 import { HELP } from "../help";
-import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, heightLabel, labeledChoices, layerTitle, patternName, roleColor, stackHeightMm } from "../labels";
+import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, heightLabel, labeledChoices, layerSummary, layerTitle, patternName, roleColor, stackHeightMm } from "../labels";
 import { facadeCatalog, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
 import { usePlanner } from "../store";
 import type { Layer } from "../types";
@@ -163,7 +164,7 @@ export function Design() {
             </details>
           </Card>
         </div>
-        <div className="col">
+        <div className="col side">
           <Preview />
           <HelpCard />
         </div>
@@ -247,8 +248,8 @@ function LayerCard({ index }: { index: number }) {
           <Grip />
         </button>
         <button type="button" className="name" aria-expanded={open} aria-label={`Edit ${title}`} onClick={() => store.setExpandedLayer(open ? null : index)}>
-          {title}
-          {notes.some(isMisfitNote) ? <span className="bad"> · does not fit</span> : null}
+          <span>{title}{notes.some(isMisfitNote) ? <span className="bad"> · does not fit</span> : null}</span>
+          <span className="layer-summary">{layerSummary(layer)}</span>
         </button>
         <span className="pill">{heightLabel(layer.height)}</span>
         <button type="button" className="icon-btn" aria-label={`Remove ${title}`} onClick={() => store.removeLayer(index)}>×</button>
@@ -390,9 +391,15 @@ function NumberField({ index, field, label }: { index: number; field: "gridW" | 
 function HelpCard() {
   const { helpTopic } = usePlanner();
   const block = HELP[helpTopic];
+  const ref = useRef<HTMLElement>(null);
+  // Help updates as fields are focused; keep it reachable in the side column.
+  useEffect(() => {
+    if (helpTopic && typeof ref.current?.scrollIntoView === "function") ref.current.scrollIntoView({ block: "nearest" });
+  }, [helpTopic]);
   return (
-    <section className="card" id="help">
+    <section className="card" id="help" ref={ref}>
       <h2>Help</h2>
+      <div aria-live="polite">
       {block ? (
         <>
           <h3>{block.title}</h3>
@@ -407,6 +414,7 @@ function HelpCard() {
       ) : (
         <p className="note">Click a labelled option. What it changes, the manual page, and the parts in your size show up here.</p>
       )}
+      </div>
     </section>
   );
 }

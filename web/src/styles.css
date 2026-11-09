@@ -445,12 +445,21 @@
 
   .layer-row .name {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     text-align: start;
     background: transparent;
     border: none;
     padding: 0.35rem 0.2rem;
     min-block-size: 2.25rem;
     font-weight: 500;
+  }
+
+  .layer-summary {
+    font-size: 0.86rem;
+    font-weight: 400;
+    color: var(--muted-foreground);
   }
 
   .icon-btn {
@@ -531,9 +540,34 @@
   }
 
   .cabinet {
-    inline-size: min(100%, 280px);
-    block-size: auto;
+    /* Height-driven: the drawing's box is its own shape at any stack height. */
+    block-size: 480px;
+    block-size: min(52dvh, 480px);
+    inline-size: auto;
+    max-inline-size: 100%;
     color: var(--preview-frame);
+  }
+
+  /* The drawing and Help stick in the side column while editing, so both stay
+     in the periphery. Two-column layout only; the column scrolls internally
+     only when Help outgrows the viewport. */
+  @media (min-width: 901px) {
+    .col.side {
+      position: sticky;
+      top: 1rem;
+      max-block-size: calc(100dvh - 2rem);
+      overflow-y: auto;
+    }
+  }
+
+  #help h3 {
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  #help img {
+    max-inline-size: 100%;
+    block-size: auto;
   }
 
   .badges {
