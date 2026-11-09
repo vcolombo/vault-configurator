@@ -2,7 +2,7 @@ import { usePlanner } from "../store";
 import { Hardware } from "./Parts";
 
 export function Assemble() {
-  const { bom, state, patch, setTab } = usePlanner();
+  const { bom, bomStale, state, patch, setTab } = usePlanner();
   const parts = bom?.parts || [];
   const rows = bom?.hardware || [];
   // Count against the current BOM only: progress keeps checks for stacks that no longer exist.
@@ -10,7 +10,8 @@ export function Assemble() {
   const partKeys = new Set(parts.map((part) => `${part.group}|${part.name}`));
   const assembleDone = [...partKeys].filter((key) => !!state.progress.assemble?.[key]?.done).length;
   const total = rows.length + partKeys.size;
-  const complete = total > 0 && hardwareDone + assembleDone === total;
+  // A BOM computed for an earlier stack/settings must not claim this one is built.
+  const complete = !bomStale && total > 0 && hardwareDone + assembleDone === total;
   let last = "";
   return (
     <div className="page">

@@ -29,6 +29,8 @@ type Store = {
   presets: PresetMap;
   state: PlannerState | null;
   bom: Bom | null;
+  /** True while `bom` was computed for an earlier signature (or none yet). */
+  bomStale: boolean;
   plan: Plan | null;
   planNote: string;
   exportFiles: ExportFile[];
@@ -148,6 +150,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [presets, setPresets] = useState<PresetMap>({});
   const [state, setState] = useState<PlannerState | null>(null);
   const [bom, setBom] = useState<Bom | null>(null);
+  const [bomSig, setBomSig] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [planNote, setPlanNote] = useState("");
   const [exportFiles, setExportFiles] = useState<ExportFile[]>([]);
@@ -251,6 +254,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         if (cancel) return;
         if (!requested.stack.layers.length) {
           setBom(null);
+          setBomSig(requestSig);
           setStatus("");
           return;
         }
@@ -265,6 +269,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           });
           if (cancel || !stateRef.current || signature(stateRef.current) !== requestSig) return;
           setBom(next);
+          setBomSig(requestSig);
           setStatus("");
           setState((prev) => (prev ? applyBomResult(prev, requestSig, next) : prev));
         } catch (error) {
@@ -335,6 +340,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       presets,
       state,
       bom,
+      bomStale: !bom || bomSig !== sig,
       plan,
       planNote,
       exportFiles,
@@ -576,7 +582,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       },
     };
     return value;
-  }, [archive, bom, bootError, expandedLayer, exportFiles, exportStatus, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, removedPrinter, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
+  }, [archive, bom, bomSig, bootError, expandedLayer, exportFiles, exportStatus, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, removedPrinter, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
 
   if (bootError && !api) return <p className="boot-error">{bootError}</p>;
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

@@ -519,6 +519,37 @@ test("Assembly complete appears only once every hardware and assembly line is ch
   expect(screen.getByRole("checkbox", { name: "1× Box" })).not.toBeChecked();
 });
 
+test("Assembly complete is not claimed while the BOM still belongs to an earlier signature", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "assemble",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+    progress: { layoutKey: "", plates: {}, hardware: { Screws: { qty: 4, done: true } }, assemble: { "L1 Drawer|Box": { qty: 1, done: true } } },
+  }));
+  const hold = { on: false };
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    if (String(input).includes("/api/bom") && hold.on) return new Promise<Response>(() => undefined);
+    const response = await base(input, init);
+    if (!String(input).includes("/api/bom")) return response;
+    const body = await response.json() as Record<string, unknown>;
+    return json({ ...body, parts: [{ group: "L1 Drawer", name: "Box", qty: 1, role: "box", file: "box.stl" }], hardware: [{ item: "Screws", qty: 4 }] });
+  }));
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Assembly complete" })).toBeInTheDocument();
+  // A signature change (fit target) starts a new BOM; while it is in flight the
+  // previous BOM and its checks must not claim the new configuration is built.
+  hold.on = true;
+  await user.selectOptions(screen.getByLabelText("All printers"), "u1");
+  expect(screen.queryByRole("heading", { name: "Assembly complete" })).not.toBeInTheDocument();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {
