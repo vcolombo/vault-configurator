@@ -111,11 +111,11 @@ export function Plates() {
         </label>
         <label className="field">
           <span>Part spacing (mm)</span>
-          <NumberField label="Part spacing" value={state.settings.spacing} min={0} onCommit={(next) => patch((draft) => { draft.settings.spacing = next; })} />
+          <NumberField label="Part spacing (mm)" value={state.settings.spacing} min={0} onCommit={(next) => patch((draft) => { draft.settings.spacing = next; })} />
         </label>
         <label className="field">
           <span>Bed-edge margin (mm)</span>
-          <NumberField label="Bed-edge margin" value={state.settings.edge} min={0} onCommit={(next) => patch((draft) => { draft.settings.edge = next; })} />
+          <NumberField label="Bed-edge margin (mm)" value={state.settings.edge} min={0} onCommit={(next) => patch((draft) => { draft.settings.edge = next; })} />
         </label>
         <label className="check">
           <input type="checkbox" checked={state.settings.estimateFromPreset !== false} onChange={(event) => patch((draft) => { draft.settings.estimateFromPreset = event.target.checked; })} />

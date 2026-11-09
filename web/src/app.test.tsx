@@ -733,6 +733,7 @@ test("Save confirms, and the saved project appears in Load next to the working c
   expect(screen.getByRole("button", { name: "Saved" })).toBeInTheDocument();
   await user.click(screen.getByText("Load"));
   expect(screen.getByRole("button", { name: "Working copy" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "my-vault" })).toBeInTheDocument();
   expect(screen.getByText(/working copy autosaves as you go/)).toBeInTheDocument();
 });
 
