@@ -12,12 +12,15 @@ export function Plates() {
   const packing = exportPrinters(state);
   const estimate = estimatePrinter(state);
   const unplaceable = plan?.unplaceable?.length || 0;
+  const exported = store.exportFiles.length;
   const readyParts = [
     plan ? `${plan.plates.length} ${plan.plates.length === 1 ? "plate" : "plates"} planned` : "",
     unplaceable ? `${unplaceable} ${unplaceable === 1 ? "part" : "parts"} cannot be placed` : "",
-    store.exportFiles.length ? `${store.exportFiles.length} ${store.exportFiles.length === 1 ? "file" : "files"} exported` : "nothing exported yet",
+    exported
+      ? (store.exportCurrent ? `${exported} ${exported === 1 ? "file" : "files"} exported` : "exported files are for an earlier build")
+      : "nothing exported yet",
   ].filter(Boolean).join(" · ");
-  const ready = `${readyParts.charAt(0).toUpperCase()}${readyParts.slice(1)}.${store.exportFiles.length ? "" : " You can start assembling before you export."}`;
+  const ready = `${readyParts.charAt(0).toUpperCase()}${readyParts.slice(1)}.${store.exportCurrent ? "" : " You can start assembling before you export."}`;
   return (
     <div className="page">
       <h1>Plates & export</h1>

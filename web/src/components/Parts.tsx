@@ -18,7 +18,7 @@ export function Parts() {
     grouped.set(part.name, row);
   }
   const missing = parts.filter((part) => partFitsScope(part, ids) === "missing").length;
-  const tooBig = parts.filter((part) => { const fit = partFitsScope(part, ids); return fit !== "fits" && fit !== "missing"; }).length;
+  const tooBig = parts.filter((part) => partFitsScope(part, ids) === "unfit").length;
   const ready = parts.length
     ? [
       `${pieces} pieces`,

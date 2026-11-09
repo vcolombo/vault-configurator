@@ -2,7 +2,7 @@ import { flushSync } from "react-dom";
 import { footprintLine } from "../../../planner.mjs";
 import { HELP } from "../help";
 import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, heightLabel, labeledChoices, layerTitle, patternName, roleColor, stackHeightMm } from "../labels";
-import { facadeCatalog, heightCatalog, layerFitNotes, layoutCatalog } from "../stack";
+import { facadeCatalog, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
 import { usePlanner } from "../store";
 import type { Layer } from "../types";
 import { Card, ChoiceSelect, Grip, StepFooter, Switch } from "./ui";
@@ -35,7 +35,7 @@ export function Design() {
 
   const layers = state.stack.layers;
   const units = layers.reduce((sum, layer) => sum + Number(layer.height || 0), 0);
-  const misfits = layers.filter((_layer, index) => layerFitNotes(bom, index).some((note) => note.includes("does not fit"))).length;
+  const misfits = layers.filter((_layer, index) => layerFitNotes(bom, index).some(isMisfitNote)).length;
   const ready = layers.length
     ? `${layers.length} ${layers.length === 1 ? "layer" : "layers"} · ${units}U · ${stackHeightMm(layers, state.stack.roof?.type).toFixed(1)} mm tall${misfits ? ` · ${misfits} ${misfits === 1 ? "layer does" : "layers do"} not fit your printers` : ""}.`
     : "No layers yet. You can continue, but Parts stays empty until the stack has one.";
@@ -248,7 +248,7 @@ function LayerCard({ index }: { index: number }) {
         </button>
         <button type="button" className="name" aria-expanded={open} aria-label={`Edit ${title}`} onClick={() => store.setExpandedLayer(open ? null : index)}>
           {title}
-          {notes.some((note) => note.includes("does not fit")) ? <span className="bad"> · does not fit</span> : null}
+          {notes.some(isMisfitNote) ? <span className="bad"> · does not fit</span> : null}
         </button>
         <span className="pill">{heightLabel(layer.height)}</span>
         <button type="button" className="icon-btn" aria-label={`Remove ${title}`} onClick={() => store.removeLayer(index)}>×</button>
