@@ -768,6 +768,87 @@ test("collapsed layer rows summarise boxes, interior, and a non-default lock", a
   expect(screen.getByText("dividers")).toBeInTheDocument();
 });
 
+const hardenDrawer = {
+  type: "Drawers", layout: "S", height: 2, facades: [[1, 1]], interior: "grid", key: "hidden",
+  labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+  gridW: 2, gridD: 3, divW: 1, divD: 2,
+};
+const hardenSustainer = {
+  type: "Sustainers", layout: "L", height: 1, facades: [[1]], interior: "none", key: "key",
+  labels: true, rails: false, manualSupports: false, variant: "Sealed", baseplate: false,
+  gridW: 1, gridD: 1, divW: 1, divD: 2, dividers: true,
+};
+
+function seedStack(layers: unknown[]) {
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers, roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBom([], []);
+}
+
+test("removing a layer offers Undo, and Undo restores it in place", async () => {
+  const user = userEvent.setup();
+  seedStack([hardenDrawer, hardenSustainer]);
+  const { container } = render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  const summaries = () => [...container.querySelectorAll(".layer-summary")].map((node) => node.textContent);
+  expect(summaries()).toEqual(["sealed", "2 boxes · grid 2×3 · hidden key"]);
+  await user.click(screen.getByRole("button", { name: "Remove L sustainer" }));
+  expect(screen.getByText(/L sustainer removed\./)).toBeInTheDocument();
+  expect(summaries()).toEqual(["2 boxes · grid 2×3 · hidden key"]);
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  expect(summaries()).toEqual(["sealed", "2 boxes · grid 2×3 · hidden key"]);
+  expect(screen.queryByText(/L sustainer removed\./)).not.toBeInTheDocument();
+});
+
+test("Start over clears nothing until it is confirmed by count", async () => {
+  const user = userEvent.setup();
+  seedStack([hardenDrawer, hardenSustainer]);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  expect(screen.getByText(/Start over removes 2 layers/)).toBeInTheDocument();
+  expect(screen.getByText("sealed")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Keep my stack" }));
+  expect(screen.queryByText(/Start over removes 2 layers/)).not.toBeInTheDocument();
+  expect(screen.getByText("sealed")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  expect(screen.getAllByText(/No layers yet/).length).toBeGreaterThan(0);
+  expect(screen.queryByText("sealed")).not.toBeInTheDocument();
+});
+
+test("Duplicate layer opens an independent clone beneath the original", async () => {
+  const user = userEvent.setup();
+  seedStack([hardenDrawer]);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
+  await user.click(screen.getByRole("button", { name: "Duplicate layer" }));
+  expect(screen.getAllByText("2 boxes · grid 2×3 · hidden key")).toHaveLength(2);
+  // The clone's editor is the open one; changing its lock leaves the original's summary intact.
+  await user.selectOptions(screen.getByLabelText("Lock"), "none");
+  expect(screen.getByText("2 boxes · grid 2×3 · hidden key")).toBeInTheDocument();
+  expect(screen.getByText("2 boxes · grid 2×3 · no lock")).toBeInTheDocument();
+});
+
+test("? buttons ask for help without toggling their field", async () => {
+  const user = userEvent.setup();
+  seedStack([hardenDrawer]);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Help: Depth" }));
+  expect(screen.getByRole("heading", { name: "Depth" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
+  const labels = screen.getByRole("checkbox", { name: "labels" });
+  expect(labels).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "Help: labels" }));
+  expect(screen.getByRole("heading", { name: "Labels" })).toBeInTheDocument();
+  expect(labels).toBeChecked();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

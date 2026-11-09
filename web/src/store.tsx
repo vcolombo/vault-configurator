@@ -18,7 +18,7 @@ import {
 import { getJson, postJson } from "./api";
 import { uid } from "./labels";
 import { newLayer } from "./stack";
-import type { Bom, ExportFile, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
+import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
 
@@ -45,12 +45,16 @@ type Store = {
   setSettingsSection: (section: SettingsSection) => void;
   removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
   setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
+  removedLayer: { layer: Layer; index: number } | null;
+  setRemovedLayer: (removed: Store["removedLayer"]) => void;
   archive: { done: number; total: number; msg?: string };
   status: string;
   exportStatus: string;
   helpTopic: string;
   helpSerial: number;
+  helpAsk: number;
   showHelp: (topic: string) => void;
+  askHelp: (topic: string) => void;
   expandedLayer: number | null;
   setExpandedLayer: (index: number | null) => void;
   viewer: { file: string; label: string; color: string; opener: HTMLElement | null } | null;
@@ -60,6 +64,7 @@ type Store = {
   setTab: (tab: TabId) => void;
   addLayer: () => void;
   removeLayer: (index: number) => void;
+  duplicateLayer: (index: number) => void;
   moveLayer: (index: number, delta: number) => void;
   saveProject: () => void;
   loadProject: (id: string) => void;
@@ -164,11 +169,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("printers");
   const [removedPrinter, setRemovedPrinter] = useState<Store["removedPrinter"]>(null);
+  const [removedLayer, setRemovedLayer] = useState<Store["removedLayer"]>(null);
   const [archive, setArchive] = useState<{ done: number; total: number; msg?: string }>({ done: 0, total: 0 });
   const [status, setStatus] = useState("");
   const [exportStatus, setExportStatus] = useState("");
   const [helpTopic, setHelpTopic] = useState("");
   const [helpSerial, setHelpSerial] = useState(0);
+  const [helpAsk, setHelpAsk] = useState(0);
   const [expandedLayer, setExpandedLayer] = useState<number | null>(null);
   const [viewer, setViewer] = useState<Store["viewer"]>(null);
   const [importStatus, setImportStatus] = useState("");
@@ -366,15 +373,26 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       setSettingsSection,
       removedPrinter,
       setRemovedPrinter,
+      removedLayer,
+      setRemovedLayer,
       archive,
       status,
       exportStatus,
       helpTopic,
       helpSerial,
+      helpAsk,
       showHelp: (topic) => {
         if (stateRef.current?.help === false) return;
         setHelpTopic(topic);
         setHelpSerial((serial) => serial + 1);
+      },
+      // askHelp is a deliberate request (a ? button): like showHelp, plus the
+      // Help card may scroll itself into view when it is off-screen.
+      askHelp: (topic) => {
+        if (stateRef.current?.help === false) return;
+        setHelpTopic(topic);
+        setHelpSerial((serial) => serial + 1);
+        setHelpAsk((serial) => serial + 1);
       },
       expandedLayer,
       setExpandedLayer,
@@ -388,9 +406,26 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       addLayer: () => patch((draft) => {
         draft.stack.layers.push(newLayer(draft.stack, meta));
       }),
-      removeLayer: (index) => patch((draft) => {
-        draft.stack.layers.splice(index, 1);
-      }),
+      removeLayer: (index) => {
+        const layer = stateRef.current?.stack.layers[index];
+        if (!layer) return;
+        // Single-slot capture like removedPrinter: Undo restores this exact
+        // layer at its index; a second removal replaces the capture.
+        setRemovedLayer({ layer: structuredClone(layer), index });
+        setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
+        patch((draft) => {
+          draft.stack.layers.splice(index, 1);
+        });
+      },
+      duplicateLayer: (index) => {
+        if (!stateRef.current?.stack.layers[index]) return;
+        patch((draft) => {
+          draft.stack.layers.splice(index, 0, structuredClone(draft.stack.layers[index]));
+        });
+        // The clone takes the original's slot in display order, directly
+        // beneath it; open the clone (display is top-first, index order).
+        setExpandedLayer(index);
+      },
       moveLayer: (index, delta) => patch((draft) => {
         const target = index + delta;
         if (target < 0 || target >= draft.stack.layers.length) return;
@@ -601,7 +636,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       },
     };
     return value;
-  }, [archive, bom, bomSig, bootError, expandedLayer, exportFiles, exportMain, exportSig, exportStatus, helpSerial, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, removedPrinter, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
+  }, [archive, bom, bomSig, bootError, expandedLayer, exportFiles, exportMain, exportSig, exportStatus, helpAsk, helpSerial, helpTopic, importStatus, meta, plan, planNote, presetStatus, presets, ready, removedLayer, removedPrinter, settingsOpen, settingsSection, spoolStatus, spools, stackFileStatus, state, status, theme, viewer]);
 
   if (bootError && !api) return <p className="boot-error">{bootError}</p>;
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

@@ -413,6 +413,30 @@
     margin: 0;
   }
 
+  .field-label, .check-row, .finish-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .help-btn {
+    inline-size: 1.15rem;
+    block-size: 1.15rem;
+    flex: none;
+    border: 1px solid var(--input);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    line-height: 1;
+    padding: 0;
+  }
+
+  .help-btn:hover {
+    color: var(--foreground);
+    border-color: var(--foreground);
+  }
+
   .field-row, .finish-row, .editor, .actions {
     display: flex;
     flex-wrap: wrap;
