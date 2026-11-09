@@ -787,19 +787,26 @@ function seedStack(layers: unknown[]) {
   }));
   stubBom([], []);
 }
+const hardenDivided = {
+  type: "Sustainers", layout: "S", height: 1, facades: [[1]], interior: "none", key: "key",
+  labels: true, rails: false, manualSupports: false, variant: "Sealed", baseplate: false,
+  gridW: 1, gridD: 1, divW: 1, divD: 2, dividers: true,
+};
 
 test("removing a layer offers Undo, and Undo restores it in place", async () => {
   const user = userEvent.setup();
-  seedStack([hardenDrawer, hardenSustainer]);
+  // Middle-of-three: an append-on-restore implementation would put "sealed"
+  // on top instead of back between its neighbours.
+  seedStack([hardenDrawer, hardenSustainer, hardenDivided]);
   const { container } = render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
   const summaries = () => [...container.querySelectorAll(".layer-summary")].map((node) => node.textContent);
-  expect(summaries()).toEqual(["sealed", "2 boxes · grid 2×3 · hidden key"]);
+  expect(summaries()).toEqual(["dividers", "sealed", "2 boxes · grid 2×3 · hidden key"]);
   await user.click(screen.getByRole("button", { name: "Remove L sustainer" }));
   expect(screen.getByText(/L sustainer removed\./)).toBeInTheDocument();
-  expect(summaries()).toEqual(["2 boxes · grid 2×3 · hidden key"]);
+  expect(summaries()).toEqual(["dividers", "2 boxes · grid 2×3 · hidden key"]);
   await user.click(screen.getByRole("button", { name: "Undo" }));
-  expect(summaries()).toEqual(["sealed", "2 boxes · grid 2×3 · hidden key"]);
+  expect(summaries()).toEqual(["dividers", "sealed", "2 boxes · grid 2×3 · hidden key"]);
   expect(screen.queryByText(/L sustainer removed\./)).not.toBeInTheDocument();
 });
 
@@ -823,15 +830,20 @@ test("Start over clears nothing until it is confirmed by count", async () => {
 test("Duplicate layer opens an independent clone beneath the original", async () => {
   const user = userEvent.setup();
   seedStack([hardenDrawer]);
-  render(<App />);
+  const { container } = render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
+  const summaries = () => [...container.querySelectorAll(".layer-summary")].map((node) => node.textContent);
   await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
   await user.click(screen.getByRole("button", { name: "Duplicate layer" }));
-  expect(screen.getAllByText("2 boxes · grid 2×3 · hidden key")).toHaveLength(2);
-  // The clone's editor is the open one; changing its lock leaves the original's summary intact.
-  await user.selectOptions(screen.getByLabelText("Lock"), "none");
-  expect(screen.getByText("2 boxes · grid 2×3 · hidden key")).toBeInTheDocument();
-  expect(screen.getByText("2 boxes · grid 2×3 · no lock")).toBeInTheDocument();
+  expect(summaries()).toEqual(["2 boxes · grid 2×3 · hidden key", "2 boxes · grid 2×3 · hidden key"]);
+  // The clone (second row, directly beneath) is the open editor, not the original.
+  const editors = screen.getAllByRole("button", { name: "Edit S drawer" });
+  expect(editors[0]).toHaveAttribute("aria-expanded", "false");
+  expect(editors[1]).toHaveAttribute("aria-expanded", "true");
+  // Editing the clone's nested facades must not leak into the original:
+  // structuredClone keeps shared references shared, so a shallow duplicate fails here.
+  await user.selectOptions(screen.getByLabelText("Facades"), "[2]");
+  expect(summaries()).toEqual(["2 boxes · grid 2×3 · hidden key", "grid 2×3 · hidden key"]);
 });
 
 test("? buttons ask for help without toggling their field", async () => {
@@ -839,7 +851,11 @@ test("? buttons ask for help without toggling their field", async () => {
   seedStack([hardenDrawer]);
   render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
-  await user.click(screen.getByRole("button", { name: "Help: Depth" }));
+  // Tab order: the field comes before its ? button in the DOM.
+  const depthField = screen.getByLabelText("Depth");
+  const depthHelp = screen.getByRole("button", { name: "Help: Depth" });
+  expect(depthField.compareDocumentPosition(depthHelp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await user.click(depthHelp);
   expect(screen.getByRole("heading", { name: "Depth" })).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
   const labels = screen.getByRole("checkbox", { name: "labels" });
@@ -847,6 +863,22 @@ test("? buttons ask for help without toggling their field", async () => {
   await user.click(screen.getByRole("button", { name: "Help: labels" }));
   expect(screen.getByRole("heading", { name: "Labels" })).toBeInTheDocument();
   expect(labels).toBeChecked();
+});
+
+test("Start over also confirms before discarding a roof-only design", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "grid", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBom([], []);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  expect(screen.getByText(/resets the roof and mods/)).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Keep my stack" }));
+  expect(screen.getByLabelText("Roof")).toHaveValue("grid");
 });
 
 test("a test-plate group removed from the stack no longer enables export", async () => {

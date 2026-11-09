@@ -83,7 +83,7 @@ export function Design() {
             ) : null}
             {confirmReset ? (
               <p className="confirm-remove" role="status">
-                <span className="note">Start over removes {state.stack.layers.length} {state.stack.layers.length === 1 ? "layer" : "layers"} and any colour overrides, and resets the roof and mods.</span>
+                <span className="note">Start over {state.stack.layers.length ? `removes ${state.stack.layers.length} ${state.stack.layers.length === 1 ? "layer" : "layers"} and any colour overrides, and ` : ""}resets the roof and mods.</span>
                 <button type="button" className="btn" onClick={() => {
                   setConfirmReset(false);
                   setRemovedLayer(null);
@@ -99,7 +99,13 @@ export function Design() {
               </p>
             ) : (
               <button type="button" className="btn ghost" onClick={() => {
-                if (state.stack.layers.length || Object.keys(state.overrides).length) setConfirmReset(true);
+                const mods = state.stack.mods;
+                const customized = state.stack.layers.length > 0
+                  || Object.keys(state.overrides).length > 0
+                  || (state.stack.roof?.type || "none") !== "none"
+                  || state.stack.roof?.topHandle === false
+                  || Object.entries(mods).some(([name, value]) => (name === "backbone" || name === "pegboard" ? value !== "none" : !!value));
+                if (customized) setConfirmReset(true);
                 else patch((draft) => {
                   draft.stack.roof = { type: "none", topHandle: true };
                   draft.stack.mods = { backbone: "none", pegboard: "none" };
@@ -123,10 +129,11 @@ export function Design() {
               </span>
             ) : null}
             <div className="finish-row">
-              <span className="finish-name"><span onClick={() => showHelp("backbone")}>Backbone</span><HelpButton topic="backbone" label="Backbone" /></span>
+              <span onClick={() => showHelp("backbone")}>Backbone</span>
               <Switch pressed={backbone !== "none"} label="Backbone" onToggle={(on) => patch((draft) => {
                 draft.stack.mods.backbone = on ? "wide" : "none";
               })} />
+              <HelpButton topic="backbone" label="Backbone" />
             </div>
             <p className="note">Boards bolted up the back of the stack. They carry the handle, pegboard and wall mounts.</p>
             {backbone !== "none" ? (
@@ -139,10 +146,11 @@ export function Design() {
               </label>
             ) : null}
             <div className="finish-row">
-              <span className="finish-name"><span onClick={() => showHelp("pegboard")}>Pegboard back</span><HelpButton topic="pegboard" label="Pegboard back" /></span>
+              <span onClick={() => showHelp("pegboard")}>Pegboard back</span>
               <Switch pressed={pegboard !== "none"} label="Pegboard back" onToggle={(on) => patch((draft) => {
                 draft.stack.mods.pegboard = on ? "ussa" : "none";
               })} />
+              <HelpButton topic="pegboard" label="Pegboard back" />
             </div>
             <p className="note">Attachment rails on the back for hanging tools. The pegboard panel itself is bought or printed separately.</p>
             {pegboard !== "none" ? (
@@ -334,11 +342,8 @@ function LayerCard({ index }: { index: number }) {
                 }, (value) => INTERIOR_LABEL[String(value)] || String(value))}
                 onChange={(value) => patch((draft) => { draft.stack.layers[index].interior = value; })}
               />
-              <span className="field">
-                <span className="field-label">
-                  <label htmlFor={lockId}>Lock</label>
-                  <HelpButton topic="key" label="Lock" />
-                </span>
+              <span className="field has-help">
+                <label htmlFor={lockId}>Lock</label>
                 <select id={lockId} aria-label="Lock" value={layer.key} onFocus={() => store.showHelp("key")} onChange={(event) => patch((draft) => {
                   draft.stack.layers[index].key =
                     event.target.value;
@@ -347,6 +352,7 @@ function LayerCard({ index }: { index: number }) {
                   <option value="hidden">hidden key</option>
                   <option value="none">none</option>
                 </select>
+                <HelpButton topic="key" label="Lock" />
               </span>
               <Flag index={index} field="labels" label="labels" help="labels" />
               <Flag index={index} field="rails" label="geared rails" help="rails" forced={allBaysSplit} note={someBaySplit && !allBaysSplit ? "split bays always include them" : undefined} />

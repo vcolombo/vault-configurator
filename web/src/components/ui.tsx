@@ -119,11 +119,8 @@ export function ChoiceSelect({
   const { showHelp } = usePlanner();
   const selected = view.options.find((option) => option.selected);
   return (
-    <span className="field">
-      <span className="field-label">
-        <label htmlFor={id} onClick={() => help && showHelp(help)}>{label}</label>
-        {help ? <HelpButton topic={help} label={label} /> : null}
-      </span>
+    <span className={help ? "field has-help" : "field"}>
+      <label htmlFor={id} onClick={() => help && showHelp(help)}>{label}</label>
       <select
         id={id}
         aria-label={label}
@@ -137,6 +134,7 @@ export function ChoiceSelect({
           </option>
         ))}
       </select>
+      {help ? <HelpButton topic={help} label={label} /> : null}
       {view.warning ? <span className="warn">{view.warning}</span> : null}
     </span>
   );
