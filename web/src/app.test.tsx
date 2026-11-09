@@ -698,6 +698,32 @@ test("Plates explains an empty stack instead of leaving Preview and Export unexp
   expect(screen.getByRole("button", { name: "Preview plates" })).toBeDisabled();
 });
 
+test("removing the last layer disables Preview and Export before the BOM catches up", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBom([{ group: "L1 Drawer", name: "Box", qty: 1, role: "main", file: "box.stl", kind: "module" }], []);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("tab", { name: "3 Plates" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Export 3MF" })).toBeEnabled());
+  await user.click(screen.getByRole("tab", { name: "1 Design" }));
+  // Synchronous clicks: the debounced BOM clear has not run yet, so the old BOM still has parts.
+  fireEvent.click(screen.getByRole("button", { name: "Remove S drawer" }));
+  fireEvent.click(screen.getByRole("tab", { name: "3 Plates" }));
+  expect(screen.getByText("Nothing to export yet — add a layer on Design.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Export 3MF" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Preview plates" })).toBeDisabled();
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

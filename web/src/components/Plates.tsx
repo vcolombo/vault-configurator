@@ -18,7 +18,7 @@ export function Plates() {
   const emptyStack = !state.stack.layers.length;
   const missingLines = store.bomStale ? [] : missingFileLines(partLines);
   const missingPieces = missingLines.reduce((sum, part) => sum + Number(part.qty || 0), 0);
-  const canExport = partLines.length > 0 && !missingLines.length && packing.length > 0;
+  const canExport = !emptyStack && partLines.length > 0 && !missingLines.length && packing.length > 0;
   const exported = store.exportFiles.length;
   const exportLine = {
     none: "nothing exported yet",
@@ -60,7 +60,7 @@ export function Plates() {
         <p className="note">Packing with {packing.map((printer) => printerLabel(printer)).join(", ") || "no printer"}.{packing.length > 1 ? " Each part is packed once, shared between them to balance print time." : ""}</p>
         <p className="note">Weight estimate uses {bomPrinter(store.bom?.estimate?.printer, estimate ? printerLabel(estimate) : "")}.</p>
         <div className="actions">
-          <button type="button" className="btn" disabled={!partLines.length} onClick={() => void store.previewPlates()}>Preview plates</button>
+          <button type="button" className="btn" disabled={emptyStack || !partLines.length} onClick={() => void store.previewPlates()}>Preview plates</button>
           <button type="button" className="btn primary" disabled={!canExport} onClick={() => void store.runExport("/api/export")}>Export 3MF</button>
           {!meta.files ? <button type="button" className="btn" onClick={() => void store.showSample()}>Show a sample plate</button> : null}
         </div>
