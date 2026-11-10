@@ -1,8 +1,39 @@
-import { layerNotes } from "../../planner.mjs";
-import type { Bom, Layer, Meta, Stack } from "./types";
+import { defaultPlannerState, layerNotes } from "../../planner.mjs";
+import type { Bom, Layer, Meta, PlannerState, Stack } from "./types";
 
 export function familyOf(meta: Meta, layout: string): string {
   return meta.layoutFamily?.[layout] || layout;
+}
+
+/** The blank roof/mods a fresh stack ships with, from the one place that defines it. */
+function blankFinish(): Pick<Stack, "roof" | "mods"> {
+  const { roof, mods } = defaultPlannerState(null).stack as Stack;
+  return { roof, mods };
+}
+
+/** Start over: clear layers and colour overrides, restore the blank finish. Name and depth stay. */
+export function applyStartOver(draft: PlannerState): void {
+  const blank = blankFinish();
+  draft.stack.layers = [];
+  draft.overrides = {};
+  draft.stack.roof = { ...blank.roof };
+  draft.stack.mods = { ...blank.mods };
+}
+
+/**
+ * Whether Start over would discard a chosen finish. Derived from the same
+ * blank applyStartOver writes: a key the blank carries is customized when its
+ * value differs; any other mod key only when truthy (a stored `base: false`
+ * is not a choice). topHandle counts only when explicitly off, matching the
+ * checkbox rule (`!== false` means on).
+ */
+export function finishCustomized(stack: Stack): boolean {
+  const blank = blankFinish();
+  if ((stack.roof?.type || blank.roof.type) !== blank.roof.type) return true;
+  if (stack.roof?.topHandle === false) return true;
+  const blankMods = blank.mods as Record<string, unknown>;
+  return Object.entries(stack.mods || {}).some(([name, value]) =>
+    name in blankMods ? value !== blankMods[name] : !!value);
 }
 
 export function newLayer(stack: Stack, meta: Meta): Layer {

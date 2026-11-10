@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { footprintLine, partFitsScope } from "../../../planner.mjs";
 import { HELP } from "../help";
 import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, heightLabel, labeledChoices, layerSummary, layerTitle, patternName, roleColor, stackHeightMm } from "../labels";
-import { facadeCatalog, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
+import { applyStartOver, facadeCatalog, finishCustomized, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
 import { usePlanner } from "../store";
 import type { Layer } from "../types";
 import { Card, ChoiceSelect, Grip, HelpButton, StepFooter, Switch } from "./ui";
@@ -88,28 +88,17 @@ export function Design() {
                   setConfirmReset(false);
                   setRemovedLayer(null);
                   store.setExpandedLayer(null);
-                  patch((draft) => {
-                    draft.stack.layers = [];
-                    draft.overrides = {};
-                    draft.stack.roof = { type: "none", topHandle: true };
-                    draft.stack.mods = { backbone: "none", pegboard: "none" };
-                  });
+                  patch(applyStartOver);
                 }}>Start over</button>
                 <button type="button" className="btn" onClick={() => setConfirmReset(false)}>Keep my stack</button>
               </p>
             ) : (
               <button type="button" className="btn ghost" onClick={() => {
-                const mods = state.stack.mods;
                 const customized = state.stack.layers.length > 0
                   || Object.keys(state.overrides).length > 0
-                  || (state.stack.roof?.type || "none") !== "none"
-                  || state.stack.roof?.topHandle === false
-                  || Object.entries(mods).some(([name, value]) => (name === "backbone" || name === "pegboard" ? value !== "none" : !!value));
+                  || finishCustomized(state.stack);
                 if (customized) setConfirmReset(true);
-                else patch((draft) => {
-                  draft.stack.roof = { type: "none", topHandle: true };
-                  draft.stack.mods = { backbone: "none", pegboard: "none" };
-                });
+                else patch(applyStartOver);
               }}>Start over</button>
             )}
           </Card>
@@ -255,7 +244,7 @@ function LayerCard({ index }: { index: number }) {
   const allBaysSplit = facades.length > 0 && facades.every((faces) => faces.length > 1);
   const someBaySplit = facades.some((faces) => faces.length > 1);
   const title = layerTitle(layer);
-  const lockId = useId();
+  const lockView = labeledChoices("key", { catalog: ["key", "hidden", "none"], current: layer.key }, (value) => (value === "hidden" ? "hidden key" : String(value)));
   return (
     <div
       className="layer"
@@ -342,18 +331,15 @@ function LayerCard({ index }: { index: number }) {
                 }, (value) => INTERIOR_LABEL[String(value)] || String(value))}
                 onChange={(value) => patch((draft) => { draft.stack.layers[index].interior = value; })}
               />
-              <span className="field has-help">
-                <label htmlFor={lockId}>Lock</label>
-                <select id={lockId} aria-label="Lock" value={layer.key} onFocus={() => store.showHelp("key")} onChange={(event) => patch((draft) => {
+              <ChoiceSelect
+                label="Lock"
+                help="key"
+                view={lockView}
+                onChange={(value) => patch((draft) => {
                   draft.stack.layers[index].key =
-                    event.target.value;
-                })}>
-                  <option value="key">key</option>
-                  <option value="hidden">hidden key</option>
-                  <option value="none">none</option>
-                </select>
-                <HelpButton topic="key" label="Lock" />
-              </span>
+                    value;
+                })}
+              />
               <Flag index={index} field="labels" label="labels" help="labels" />
               <Flag index={index} field="rails" label="geared rails" help="rails" forced={allBaysSplit} note={someBaySplit && !allBaysSplit ? "split bays always include them" : undefined} />
               <Flag index={index} field="manualSupports" label="manual support wall" help="manualSupports" />

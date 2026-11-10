@@ -346,6 +346,12 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         return next;
       });
     };
+    const openHelp = (topic: string): boolean => {
+      if (stateRef.current?.help === false) return false;
+      setHelpTopic(topic);
+      setHelpSerial((serial) => serial + 1);
+      return true;
+    };
     const value: Store = {
       ready,
       bootError,
@@ -381,19 +387,10 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       helpTopic,
       helpSerial,
       helpAsk,
-      showHelp: (topic) => {
-        if (stateRef.current?.help === false) return;
-        setHelpTopic(topic);
-        setHelpSerial((serial) => serial + 1);
-      },
+      showHelp: (topic) => { openHelp(topic); },
       // askHelp is a deliberate request (a ? button): like showHelp, plus the
       // Help card may scroll itself into view when it is off-screen.
-      askHelp: (topic) => {
-        if (stateRef.current?.help === false) return;
-        setHelpTopic(topic);
-        setHelpSerial((serial) => serial + 1);
-        setHelpAsk((serial) => serial + 1);
-      },
+      askHelp: (topic) => { if (openHelp(topic)) setHelpAsk((serial) => serial + 1); },
       expandedLayer,
       setExpandedLayer,
       viewer,
