@@ -444,48 +444,58 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         if (index >= 0) draft.projects[index] = snap;
         else draft.projects.push(snap);
       }),
-      loadProject: (id) => patch((draft) => {
-        if (!id) {
+      loadProject: (id) => {
+        if (id && stateRef.current?.projects.some((item) => item.id === id)) setRemovedLayer(null);
+        patch((draft) => {
+          if (!id) {
+            draft.activeProjectId = "";
+            return;
+          }
+          const project = draft.projects.find((item) => item.id === id);
+          if (!project) return;
+          draft.activeProjectId = id;
+          draft.stack = structuredClone(project.stack);
+          repairStackCatalog(draft.stack, meta.depths, meta.roofs);
+          draft.overrides = structuredClone(project.overrides || {});
+          draft.progress = structuredClone(project.progress || { layoutKey: "", plates: {}, hardware: {}, assemble: {} });
+        });
+      },
+      newProject: () => {
+        setRemovedLayer(null);
+        patch((draft) => {
+          const fresh = defaultPlannerState(meta.defaults) as PlannerState;
+          draft.stack = fresh.stack;
+          draft.overrides = {};
+          draft.progress = fresh.progress;
           draft.activeProjectId = "";
-          return;
-        }
-        const project = draft.projects.find((item) => item.id === id);
-        if (!project) return;
-        draft.activeProjectId = id;
-        draft.stack = structuredClone(project.stack);
-        repairStackCatalog(draft.stack, meta.depths, meta.roofs);
-        draft.overrides = structuredClone(project.overrides || {});
-        draft.progress = structuredClone(project.progress || { layoutKey: "", plates: {}, hardware: {}, assemble: {} });
-      }),
-      newProject: () => patch((draft) => {
-        const fresh = defaultPlannerState(meta.defaults) as PlannerState;
-        draft.stack = fresh.stack;
-        draft.overrides = {};
-        draft.progress = fresh.progress;
-        draft.activeProjectId = "";
-      }),
+        });
+      },
       deleteProject: (id) => patch((draft) => {
         draft.projects = draft.projects.filter((project) => project.id !== id);
         if (draft.activeProjectId === id) draft.activeProjectId = "";
       }),
-      importLayers: (layers) => patch((draft) => {
-        const blank = newLayer(draft.stack, meta);
-        draft.stack.layers = layers.map((layer) => ({
-          ...blank,
-          ...layer,
-          type: layer.type || blank.type,
-          layout: layer.layout || blank.layout,
-          height: Number(layer.height || blank.height),
-          facades: layer.facades || blank.facades,
-        }));
-        draft.overrides = {};
-      }),
+      importLayers: (layers) => {
+        setRemovedLayer(null);
+        patch((draft) => {
+          const blank = newLayer(draft.stack, meta);
+          draft.stack.layers = layers.map((layer) => ({
+            ...blank,
+            ...layer,
+            type: layer.type || blank.type,
+            layout: layer.layout || blank.layout,
+            height: Number(layer.height || blank.height),
+            facades: layer.facades || blank.facades,
+          }));
+          draft.overrides = {};
+        });
+      },
       importPdf: async (file) => {
         setImportStatus("reading…");
         try {
           const response = await fetch("/api/import_pdf", { method: "POST", headers: { "Content-Type": "application/pdf" }, body: await file.arrayBuffer() });
           const payload = await response.json() as { error?: string; layers?: PlannerState["stack"]["layers"]; warnings?: string[] };
           if (payload.error) throw new Error(payload.error);
+          setRemovedLayer(null);
           patch((draft) => {
             const blank = newLayer({ ...draft.stack, layers: [] }, meta);
             draft.stack.layers = (payload.layers || []).map((layer) => ({
@@ -518,6 +528,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         try {
           const payload = JSON.parse(await file.text()) as { stack?: PlannerState["stack"]; overrides?: PlannerState["overrides"] };
           if (!payload.stack || !Array.isArray(payload.stack.layers)) throw new Error("not a stack file");
+          setRemovedLayer(null);
           patch((draft) => {
             draft.stack = { ...defaultPlannerState(meta.defaults).stack, ...payload.stack } as PlannerState["stack"];
             repairStackCatalog(draft.stack, meta.depths, meta.roofs);

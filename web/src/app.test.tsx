@@ -802,11 +802,15 @@ test("removing a layer offers Undo, and Undo restores it in place", async () => 
   await screen.findByRole("heading", { name: "Compose your stack" });
   const summaries = () => [...container.querySelectorAll(".layer-summary")].map((node) => node.textContent);
   expect(summaries()).toEqual(["dividers", "sealed", "2 boxes · grid 2×3 · hidden key"]);
+  await user.click(screen.getByRole("button", { name: "Edit S sustainer" }));
   await user.click(screen.getByRole("button", { name: "Remove L sustainer" }));
   expect(screen.getByText(/L sustainer removed\./)).toBeInTheDocument();
   expect(summaries()).toEqual(["dividers", "2 boxes · grid 2×3 · hidden key"]);
   await user.click(screen.getByRole("button", { name: "Undo" }));
   expect(summaries()).toEqual(["dividers", "sealed", "2 boxes · grid 2×3 · hidden key"]);
+  // The open editor still targets the same (top) layer after removal and restore.
+  expect(screen.getByRole("button", { name: "Edit S sustainer" })).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("button", { name: "Edit L sustainer" })).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByText(/L sustainer removed\./)).not.toBeInTheDocument();
 });
 
@@ -870,15 +874,30 @@ test("Start over also confirms before discarding a roof-only design", async () =
   localStorage.setItem("vault-configurator", JSON.stringify({
     tab: "stack",
     stack: { name: "my-vault", depth: 5, layers: [], roof: { type: "grid", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    overrides: { anything: "red" },
     settings: meta.defaults,
   }));
   stubBom([], []);
   render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
   await user.click(screen.getByRole("button", { name: "Start over" }));
-  expect(screen.getByText(/resets the roof and mods/)).toBeInTheDocument();
+  expect(screen.getByText(/discards colour overrides, and resets the roof and mods/)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Keep my stack" }));
   expect(screen.getByLabelText("Roof")).toHaveValue("grid");
+});
+
+test("replacing the stack clears a pending layer Undo", async () => {
+  const user = userEvent.setup();
+  seedStack([hardenDrawer]);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Remove S drawer" }));
+  expect(screen.getByText(/S drawer removed\./)).toBeInTheDocument();
+  // Zero layers left, so New needs no window.confirm; it replaces the stack.
+  await user.click(screen.getByText("Load"));
+  await user.click(screen.getByRole("button", { name: "New" }));
+  expect(screen.queryByText(/S drawer removed\./)).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
 });
 
 test("a test-plate group removed from the stack no longer enables export", async () => {

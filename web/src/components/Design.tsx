@@ -75,6 +75,10 @@ export function Design() {
                 <button type="button" className="btn" onClick={() => {
                   const restore = removedLayer;
                   setRemovedLayer(null);
+                  // Keep the open editor on the same layer: restoration shifts
+                  // every layer at or below the insertion point down one index.
+                  const insertAt = Math.min(restore.index, state.stack.layers.length);
+                  if (store.expandedLayer !== null && store.expandedLayer >= insertAt) store.setExpandedLayer(store.expandedLayer + 1);
                   patch((draft) => {
                     draft.stack.layers.splice(Math.min(restore.index, draft.stack.layers.length), 0, restore.layer);
                   });
@@ -83,7 +87,11 @@ export function Design() {
             ) : null}
             {confirmReset ? (
               <p className="confirm-remove" role="status">
-                <span className="note">Start over {state.stack.layers.length ? `removes ${state.stack.layers.length} ${state.stack.layers.length === 1 ? "layer" : "layers"} and any colour overrides, and ` : ""}resets the roof and mods.</span>
+                <span className="note">Start over {[
+                  state.stack.layers.length ? `removes ${state.stack.layers.length} ${state.stack.layers.length === 1 ? "layer" : "layers"}` : null,
+                  Object.keys(state.overrides).length ? "discards colour overrides" : null,
+                  "resets the roof and mods",
+                ].filter(Boolean).join(", ").replace(/, ([^,]*)$/, ", and $1")}.</span>
                 <button type="button" className="btn" onClick={() => {
                   setConfirmReset(false);
                   setRemovedLayer(null);
@@ -441,9 +449,14 @@ function HelpCard() {
   }, [helpTopic, helpSerial]);
   // A ? button is a deliberate request: if the card is off-screen (before the
   // column sticks, or in the single-column layout), bring its heading in.
+  // Seeded with the counter at mount, so remounting (returning to Design)
+  // never replays an old request.
+  const handledAsk = useRef(helpAsk);
   useEffect(() => {
+    if (helpAsk === handledAsk.current) return;
+    handledAsk.current = helpAsk;
     const el = ref.current;
-    if (!el || !helpAsk || typeof el.scrollIntoView !== "function") return;
+    if (!el || typeof el.scrollIntoView !== "function") return;
     const rect = el.getBoundingClientRect();
     if (rect.top < 0 || rect.top > window.innerHeight - 48) el.scrollIntoView({ block: "start" });
   }, [helpAsk]);
