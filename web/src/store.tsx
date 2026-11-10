@@ -17,7 +17,7 @@ import {
 } from "../../planner.mjs";
 import { getJson, postJson } from "./api";
 import { uid } from "./labels";
-import { newLayer } from "./stack";
+import { newLayer, remapLayerOverrides } from "./stack";
 import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
@@ -45,8 +45,9 @@ type Store = {
   setSettingsSection: (section: SettingsSection) => void;
   removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
   setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
-  removedLayer: { layer: Layer; index: number } | null;
+  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"] } | null;
   setRemovedLayer: (removed: Store["removedLayer"]) => void;
+  restoreLayer: () => void;
   archive: { done: number; total: number; msg?: string };
   status: string;
   exportStatus: string;
@@ -352,6 +353,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       setHelpSerial((serial) => serial + 1);
       return true;
     };
+    // Every wholesale stack replacement goes through here: the pending layer
+    // Undo and the open editor index address the stack being thrown away.
+    const replaceStack = (recipe: (draft: PlannerState) => void) => {
+      setRemovedLayer(null);
+      setExpandedLayer(null);
+      patch(recipe);
+    };
     const value: Store = {
       ready,
       bootError,
@@ -404,19 +412,48 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         draft.stack.layers.push(newLayer(draft.stack, meta));
       }),
       removeLayer: (index) => {
-        const layer = stateRef.current?.stack.layers[index];
-        if (!layer) return;
+        const current = stateRef.current;
+        const layer = current?.stack.layers[index];
+        if (!layer || !current) return;
         // Single-slot capture like removedPrinter: Undo restores this exact
-        // layer at its index; a second removal replaces the capture.
-        setRemovedLayer({ layer: structuredClone(layer), index });
+        // layer at its index, with its colour overrides; a second removal
+        // replaces the capture.
+        setRemovedLayer(structuredClone({
+          layer,
+          index,
+          overrides: remapLayerOverrides(current.overrides, (i) => (i === index ? [index] : [])),
+        }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
         patch((draft) => {
           draft.stack.layers.splice(index, 1);
+          draft.overrides = remapLayerOverrides(draft.overrides, (i) => (i === index ? [] : [i > index ? i - 1 : i]));
+        });
+      },
+      restoreLayer: () => {
+        const restore = removedLayer;
+        if (!restore) return;
+        setRemovedLayer(null);
+        // Inverse of removeLayer's shift: indices at or above the insertion
+        // point move up one, so the open editor keeps its layer.
+        setExpandedLayer((open) => {
+          const insertAt = Math.min(restore.index, stateRef.current?.stack.layers.length ?? restore.index);
+          return open !== null && open >= insertAt ? open + 1 : open;
+        });
+        patch((draft) => {
+          const insertAt = Math.min(restore.index, draft.stack.layers.length);
+          draft.overrides = {
+            ...remapLayerOverrides(draft.overrides, (i) => [i >= insertAt ? i + 1 : i]),
+            ...remapLayerOverrides(structuredClone(restore.overrides), () => [insertAt]),
+          };
+          draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
         });
       },
       duplicateLayer: (index) => {
         if (!stateRef.current?.stack.layers[index]) return;
         patch((draft) => {
+          // The clone inherits the original's overrides at the shared index;
+          // the original and everything above it renumber up one.
+          draft.overrides = remapLayerOverrides(draft.overrides, (i) => (i < index ? [i] : i === index ? [index, index + 1] : [i + 1]));
           draft.stack.layers.splice(index, 0, structuredClone(draft.stack.layers[index]));
         });
         // The clone takes the original's slot in display order, directly
@@ -426,6 +463,10 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       moveLayer: (index, delta) => patch((draft) => {
         const target = index + delta;
         if (target < 0 || target >= draft.stack.layers.length) return;
+        const order = draft.stack.layers.map((_, i) => i);
+        const [moved] = order.splice(index, 1);
+        order.splice(target, 0, moved);
+        draft.overrides = remapLayerOverrides(draft.overrides, (i) => [order.indexOf(i)]);
         const [row] = draft.stack.layers.splice(index, 1);
         draft.stack.layers.splice(target, 0, row);
       }),
@@ -445,12 +486,11 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         else draft.projects.push(snap);
       }),
       loadProject: (id) => {
-        if (id && stateRef.current?.projects.some((item) => item.id === id)) setRemovedLayer(null);
-        patch((draft) => {
-          if (!id) {
-            draft.activeProjectId = "";
-            return;
-          }
+        if (!id) {
+          patch((draft) => { draft.activeProjectId = ""; });
+          return;
+        }
+        replaceStack((draft) => {
           const project = draft.projects.find((item) => item.id === id);
           if (!project) return;
           draft.activeProjectId = id;
@@ -460,43 +500,36 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           draft.progress = structuredClone(project.progress || { layoutKey: "", plates: {}, hardware: {}, assemble: {} });
         });
       },
-      newProject: () => {
-        setRemovedLayer(null);
-        patch((draft) => {
-          const fresh = defaultPlannerState(meta.defaults) as PlannerState;
-          draft.stack = fresh.stack;
-          draft.overrides = {};
-          draft.progress = fresh.progress;
-          draft.activeProjectId = "";
-        });
-      },
+      newProject: () => replaceStack((draft) => {
+        const fresh = defaultPlannerState(meta.defaults) as PlannerState;
+        draft.stack = fresh.stack;
+        draft.overrides = {};
+        draft.progress = fresh.progress;
+        draft.activeProjectId = "";
+      }),
       deleteProject: (id) => patch((draft) => {
         draft.projects = draft.projects.filter((project) => project.id !== id);
         if (draft.activeProjectId === id) draft.activeProjectId = "";
       }),
-      importLayers: (layers) => {
-        setRemovedLayer(null);
-        patch((draft) => {
-          const blank = newLayer(draft.stack, meta);
-          draft.stack.layers = layers.map((layer) => ({
-            ...blank,
-            ...layer,
-            type: layer.type || blank.type,
-            layout: layer.layout || blank.layout,
-            height: Number(layer.height || blank.height),
-            facades: layer.facades || blank.facades,
-          }));
-          draft.overrides = {};
-        });
-      },
+      importLayers: (layers) => replaceStack((draft) => {
+        const blank = newLayer(draft.stack, meta);
+        draft.stack.layers = layers.map((layer) => ({
+          ...blank,
+          ...layer,
+          type: layer.type || blank.type,
+          layout: layer.layout || blank.layout,
+          height: Number(layer.height || blank.height),
+          facades: layer.facades || blank.facades,
+        }));
+        draft.overrides = {};
+      }),
       importPdf: async (file) => {
         setImportStatus("reading…");
         try {
           const response = await fetch("/api/import_pdf", { method: "POST", headers: { "Content-Type": "application/pdf" }, body: await file.arrayBuffer() });
           const payload = await response.json() as { error?: string; layers?: PlannerState["stack"]["layers"]; warnings?: string[] };
           if (payload.error) throw new Error(payload.error);
-          setRemovedLayer(null);
-          patch((draft) => {
+          replaceStack((draft) => {
             const blank = newLayer({ ...draft.stack, layers: [] }, meta);
             draft.stack.layers = (payload.layers || []).map((layer) => ({
               ...blank,
@@ -528,8 +561,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         try {
           const payload = JSON.parse(await file.text()) as { stack?: PlannerState["stack"]; overrides?: PlannerState["overrides"] };
           if (!payload.stack || !Array.isArray(payload.stack.layers)) throw new Error("not a stack file");
-          setRemovedLayer(null);
-          patch((draft) => {
+          replaceStack((draft) => {
             draft.stack = { ...defaultPlannerState(meta.defaults).stack, ...payload.stack } as PlannerState["stack"];
             repairStackCatalog(draft.stack, meta.depths, meta.roofs);
             draft.overrides = payload.overrides || {};

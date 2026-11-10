@@ -72,17 +72,7 @@ export function Design() {
             {removedLayer ? (
               <p className="note" role="status">
                 {layerTitle(removedLayer.layer)} removed.{" "}
-                <button type="button" className="btn" onClick={() => {
-                  const restore = removedLayer;
-                  setRemovedLayer(null);
-                  // Keep the open editor on the same layer: restoration shifts
-                  // every layer at or below the insertion point down one index.
-                  const insertAt = Math.min(restore.index, state.stack.layers.length);
-                  if (store.expandedLayer !== null && store.expandedLayer >= insertAt) store.setExpandedLayer(store.expandedLayer + 1);
-                  patch((draft) => {
-                    draft.stack.layers.splice(Math.min(restore.index, draft.stack.layers.length), 0, restore.layer);
-                  });
-                }}>Undo</button>
+                <button type="button" className="btn" onClick={() => store.restoreLayer()}>Undo</button>
               </p>
             ) : null}
             {confirmReset ? (
@@ -106,7 +96,11 @@ export function Design() {
                   || Object.keys(state.overrides).length > 0
                   || finishCustomized(state.stack);
                 if (customized) setConfirmReset(true);
-                else patch(applyStartOver);
+                else {
+                  setRemovedLayer(null);
+                  store.setExpandedLayer(null);
+                  patch(applyStartOver);
+                }
               }}>Start over</button>
             )}
           </Card>

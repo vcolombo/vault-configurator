@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import { applyBomResult, applyPlanProgress, signature } from "./store";
+import { remapLayerOverrides } from "./stack";
 import type { Meta, PlannerState } from "./types";
 
 // jsdom has no WebGL; the dialog lifecycle is what is under test, so stub the three.js surface Viewer touches.
@@ -898,6 +899,42 @@ test("replacing the stack clears a pending layer Undo", async () => {
   await user.click(screen.getByRole("button", { name: "New" }));
   expect(screen.queryByText(/S drawer removed\./)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+});
+
+test("remapLayerOverrides renumbers layer groups and leaves other keys alone", () => {
+  const overrides = {
+    "L1 · S5 2U drawers|Latch": { role: "accent" },
+    "L2 · S5 2U drawers|Latch": { role: "dark" },
+    "Roof|Roof Whole": { role: "main" },
+  };
+  // Insert at 0 with inheritance (duplicate): L1 copies stay and move, L2 shifts.
+  expect(Object.keys(remapLayerOverrides(overrides, (i) => (i === 0 ? [0, 1] : [i + 1]))).sort()).toEqual([
+    "L1 · S5 2U drawers|Latch", "L2 · S5 2U drawers|Latch", "L3 · S5 2U drawers|Latch", "Roof|Roof Whole",
+  ]);
+  // Remove at 0: its keys drop, higher layers shift down.
+  expect(Object.keys(remapLayerOverrides(overrides, (i) => (i === 0 ? [] : [i - 1]))).sort()).toEqual([
+    "L1 · S5 2U drawers|Latch", "Roof|Roof Whole",
+  ]);
+});
+
+test("duplicating a layer renumbers colour overrides onto the right layers", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [hardenDrawer, hardenDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    overrides: { "L2 · S5 2U drawers|Latch": { role: "accent" } },
+    settings: meta.defaults,
+  }));
+  stubBom([], []);
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  // Duplicate the bottom drawer (second row shown, storage index 0).
+  await user.click(screen.getAllByRole("button", { name: "Edit S drawer" })[1]);
+  await user.click(screen.getByRole("button", { name: "Duplicate layer" }));
+  await waitFor(() => {
+    const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}");
+    expect(saved.overrides).toEqual({ "L3 · S5 2U drawers|Latch": { role: "accent" } });
+  });
 });
 
 test("a test-plate group removed from the stack no longer enables export", async () => {

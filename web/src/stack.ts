@@ -36,6 +36,36 @@ export function finishCustomized(stack: Stack): boolean {
     name in blankMods ? value !== blankMods[name] : !!value);
 }
 
+const LAYER_GROUP = /^L(\d+) · /;
+
+/**
+ * Colour/qty overrides are keyed `${group}|${name}` and catalog groups carry
+ * the layer number (`L{index + 1} · …`), so any insertion, removal or reorder
+ * must renumber the keys or overrides silently land on the wrong layer.
+ * `mapIndex` receives a 0-based layer index and returns its new index (or
+ * indices, when a duplicate inherits a copy), or an empty array to drop it.
+ * Keys whose group has no layer prefix pass through untouched.
+ */
+export function remapLayerOverrides(
+  overrides: PlannerState["overrides"],
+  mapIndex: (index: number) => number[],
+): PlannerState["overrides"] {
+  const next: PlannerState["overrides"] = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    const bar = key.indexOf("|");
+    const group = bar >= 0 ? key.slice(0, bar) : key;
+    const match = LAYER_GROUP.exec(group);
+    if (!match) {
+      next[key] = value;
+      continue;
+    }
+    for (const target of mapIndex(Number(match[1]) - 1)) {
+      next[`L${target + 1} · ${group.slice(match[0].length)}${bar >= 0 ? key.slice(bar) : ""}`] = value;
+    }
+  }
+  return next;
+}
+
 export function newLayer(stack: Stack, meta: Meta): Layer {
   const base = stack.layers[0] ? familyOf(meta, stack.layers[0].layout) : "";
   const layout = base ? meta.allowed[base]?.[0] || "S" : "S";
