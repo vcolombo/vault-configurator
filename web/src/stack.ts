@@ -66,6 +66,22 @@ export function remapLayerOverrides(
   return next;
 }
 
+/** Only the override entries belonging to one layer (for the Undo capture —
+ * restoring must never roll back unrelated overrides changed in between). */
+export function layerOverridesAt(
+  overrides: PlannerState["overrides"],
+  index: number,
+): PlannerState["overrides"] {
+  const out: PlannerState["overrides"] = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    const bar = key.indexOf("|");
+    const group = bar >= 0 ? key.slice(0, bar) : key;
+    const match = LAYER_GROUP.exec(group);
+    if (match && Number(match[1]) - 1 === index) out[key] = value;
+  }
+  return out;
+}
+
 export function newLayer(stack: Stack, meta: Meta): Layer {
   const base = stack.layers[0] ? familyOf(meta, stack.layers[0].layout) : "";
   const layout = base ? meta.allowed[base]?.[0] || "S" : "S";

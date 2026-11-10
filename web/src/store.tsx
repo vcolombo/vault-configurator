@@ -17,7 +17,7 @@ import {
 } from "../../planner.mjs";
 import { getJson, postJson } from "./api";
 import { uid } from "./labels";
-import { newLayer, remapLayerOverrides } from "./stack";
+import { layerOverridesAt, newLayer, remapLayerOverrides } from "./stack";
 import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
@@ -421,7 +421,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         setRemovedLayer(structuredClone({
           layer,
           index,
-          overrides: remapLayerOverrides(current.overrides, (i) => (i === index ? [index] : [])),
+          overrides: layerOverridesAt(current.overrides, index),
         }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
         patch((draft) => {

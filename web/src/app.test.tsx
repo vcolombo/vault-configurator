@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import { applyBomResult, applyPlanProgress, signature } from "./store";
-import { remapLayerOverrides } from "./stack";
+import { layerOverridesAt, remapLayerOverrides } from "./stack";
 import type { Meta, PlannerState } from "./types";
 
 // jsdom has no WebGL; the dialog lifecycle is what is under test, so stub the three.js surface Viewer touches.
@@ -915,6 +915,20 @@ test("remapLayerOverrides renumbers layer groups and leaves other keys alone", (
   expect(Object.keys(remapLayerOverrides(overrides, (i) => (i === 0 ? [] : [i - 1]))).sort()).toEqual([
     "L1 · S5 2U drawers|Latch", "Roof|Roof Whole",
   ]);
+});
+
+test("layerOverridesAt captures only the removed layer keys", () => {
+  // The Undo capture must not carry non-layer entries: restoring spreads the
+  // capture over current overrides, so a Roof entry here would silently roll
+  // back a roof colour changed between remove and Undo.
+  const overrides = {
+    "L1 · S5 2U drawers|Latch": { role: "accent" },
+    "L2 · S5 2U drawers|Latch": { role: "dark" },
+    "Roof|Roof Whole": { role: "main" },
+  };
+  expect(layerOverridesAt(overrides, 0)).toEqual({ "L1 · S5 2U drawers|Latch": { role: "accent" } });
+  expect(layerOverridesAt(overrides, 1)).toEqual({ "L2 · S5 2U drawers|Latch": { role: "dark" } });
+  expect(layerOverridesAt(overrides, 5)).toEqual({});
 });
 
 test("duplicating a layer renumbers colour overrides onto the right layers", async () => {
