@@ -942,6 +942,74 @@ test("duplicating a layer renumbers colour overrides onto the right layers", asy
   });
 });
 
+// A BOM whose Latch rows follow the requested stack, so progress
+// reconciliation preserves (or exposes) whatever the remap produced.
+function stubBomPerLayer() {
+  const base = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const response = await base(input, init);
+    if (!String(input).includes("/api/bom")) return response;
+    const body = await response.json() as Record<string, unknown>;
+    const requested = JSON.parse(String(init?.body || "{}")) as { stack?: { layers?: unknown[] } };
+    const parts = (requested.stack?.layers || []).map((_, i) => ({
+      group: `L${i + 1} · S5 2U drawers`, name: "Latch", qty: 2, role: "lock", file: "", size: [10, 10, 10],
+    }));
+    return json({ ...body, parts, hardware: [] });
+  }));
+}
+
+function seedCheckedStack(assemble: Record<string, { qty: number; done: boolean }>) {
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [hardenDrawer, hardenDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    progress: { layoutKey: "", plates: {}, hardware: {}, assemble },
+    settings: meta.defaults,
+  }));
+  stubBomPerLayer();
+}
+
+function persistedAssembleDone(): Record<string, boolean> {
+  const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}") as Partial<PlannerState>;
+  return Object.fromEntries(Object.entries(saved.progress?.assemble || {}).map(([key, value]) => [key, !!value?.done]));
+}
+
+test("duplicating a checked layer keeps the check on the original, clone unchecked", async () => {
+  const user = userEvent.setup();
+  seedCheckedStack({ "L2 · S5 2U drawers|Latch": { qty: 2, done: true } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getAllByRole("button", { name: "Edit S drawer" })[1]);
+  await user.click(screen.getByRole("button", { name: "Duplicate layer" }));
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({
+      "L1 · S5 2U drawers|Latch": false,
+      "L2 · S5 2U drawers|Latch": false,
+      "L3 · S5 2U drawers|Latch": true,
+    });
+  });
+});
+
+test("remove and Undo keep assembly checks with their layers", async () => {
+  const user = userEvent.setup();
+  seedCheckedStack({
+    "L1 · S5 2U drawers|Latch": { qty: 2, done: true },
+    "L2 · S5 2U drawers|Latch": { qty: 2, done: true },
+  });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getAllByRole("button", { name: "Remove S drawer" })[1]);
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": true });
+  });
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({
+      "L1 · S5 2U drawers|Latch": true,
+      "L2 · S5 2U drawers|Latch": true,
+    });
+  });
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {
