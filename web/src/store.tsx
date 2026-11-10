@@ -540,6 +540,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           facades: layer.facades || blank.facades,
         }));
         draft.overrides = {};
+        if (draft.progress) draft.progress.assemble = {};
       }),
       importPdf: async (file) => {
         setImportStatus("reading…");
@@ -558,6 +559,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
               facades: layer.facades || blank.facades,
             }));
             draft.overrides = {};
+            if (draft.progress) draft.progress.assemble = {};
           });
           setImportStatus(`${payload.layers?.length || 0} layers imported. ${(payload.warnings || []).join(" ")}`);
         } catch (error) {
@@ -583,6 +585,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             draft.stack = { ...defaultPlannerState(meta.defaults).stack, ...payload.stack } as PlannerState["stack"];
             repairStackCatalog(draft.stack, meta.depths, meta.roofs);
             draft.overrides = payload.overrides || {};
+            if (draft.progress) draft.progress.assemble = {};
           });
           setStackFileStatus(`loaded “${payload.stack.name || "stack"}” (${payload.stack.layers.length} layers)`);
         } catch (error) {

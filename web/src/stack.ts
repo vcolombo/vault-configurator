@@ -11,11 +11,14 @@ function blankFinish(): Pick<Stack, "roof" | "mods"> {
   return { roof, mods };
 }
 
-/** Start over: clear layers and colour overrides, restore the blank finish. Name and depth stay. */
+/** Start over: clear layers, colour overrides and assembly checks (they name
+ * layer instances that no longer exist, and an empty stack never reconciles
+ * them away), restore the blank finish. Name and depth stay. */
 export function applyStartOver(draft: PlannerState): void {
   const blank = blankFinish();
   draft.stack.layers = [];
   draft.overrides = {};
+  if (draft.progress) draft.progress.assemble = {};
   draft.stack.roof = { ...blank.roof };
   draft.stack.mods = { ...blank.mods };
 }

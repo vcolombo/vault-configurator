@@ -1010,6 +1010,22 @@ test("remove and Undo keep assembly checks with their layers", async () => {
   });
 });
 
+test("Start over clears assembly checks so a re-added layer starts unchecked", async () => {
+  const user = userEvent.setup();
+  seedCheckedStack({ "L1 · S5 2U drawers|Latch": { qty: 2, done: true } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  await user.click(screen.getByRole("button", { name: "Start over" }));
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({});
+  });
+  await user.click(screen.getByRole("button", { name: "Add layer" }));
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {
