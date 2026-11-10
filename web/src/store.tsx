@@ -17,7 +17,7 @@ import {
 } from "../../planner.mjs";
 import { getJson, postJson } from "./api";
 import { uid } from "./labels";
-import { layerOverridesAt, newLayer, remapLayerOverrides } from "./stack";
+import { applyStartOver, newLayer, remapLayerKeys } from "./stack";
 import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
@@ -45,9 +45,10 @@ type Store = {
   setSettingsSection: (section: SettingsSection) => void;
   removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
   setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
-  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"] } | null;
+  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"]; assemble: NonNullable<PlannerState["progress"]["assemble"]> } | null;
   setRemovedLayer: (removed: Store["removedLayer"]) => void;
   restoreLayer: () => void;
+  startOver: () => void;
   archive: { done: number; total: number; msg?: string };
   status: string;
   exportStatus: string;
@@ -416,17 +417,21 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         const layer = current?.stack.layers[index];
         if (!layer || !current) return;
         // Single-slot capture like removedPrinter: Undo restores this exact
-        // layer at its index, with its colour overrides; a second removal
-        // replaces the capture.
+        // layer at its index, with its colour overrides and assembly checks;
+        // a second removal replaces the capture. The capture holds only this
+        // layer's entries, so restoring cannot roll back unrelated changes.
         setRemovedLayer(structuredClone({
           layer,
           index,
-          overrides: layerOverridesAt(current.overrides, index),
+          overrides: remapLayerKeys(current.overrides, (i) => (i === index ? [index] : []), false),
+          assemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [index] : []), false),
         }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
         patch((draft) => {
           draft.stack.layers.splice(index, 1);
-          draft.overrides = remapLayerOverrides(draft.overrides, (i) => (i === index ? [] : [i > index ? i - 1 : i]));
+          const down = (i: number) => (i === index ? [] : [i > index ? i - 1 : i]);
+          draft.overrides = remapLayerKeys(draft.overrides, down);
+          if (draft.progress.assemble) draft.progress.assemble = remapLayerKeys(draft.progress.assemble, down);
         });
       },
       restoreLayer: () => {
@@ -441,19 +446,30 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         });
         patch((draft) => {
           const insertAt = Math.min(restore.index, draft.stack.layers.length);
+          const up = (i: number) => [i >= insertAt ? i + 1 : i];
           draft.overrides = {
-            ...remapLayerOverrides(draft.overrides, (i) => [i >= insertAt ? i + 1 : i]),
-            ...remapLayerOverrides(structuredClone(restore.overrides), () => [insertAt]),
+            ...remapLayerKeys(draft.overrides, up),
+            ...remapLayerKeys(structuredClone(restore.overrides), () => [insertAt], false),
           };
+          if (draft.progress.assemble || Object.keys(restore.assemble).length) {
+            draft.progress.assemble = {
+              ...remapLayerKeys(draft.progress.assemble || {}, up),
+              ...remapLayerKeys(structuredClone(restore.assemble), () => [insertAt], false),
+            };
+          }
           draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
         });
       },
+      startOver: () => replaceStack(applyStartOver),
       duplicateLayer: (index) => {
         if (!stateRef.current?.stack.layers[index]) return;
         patch((draft) => {
           // The clone inherits the original's overrides at the shared index;
-          // the original and everything above it renumber up one.
-          draft.overrides = remapLayerOverrides(draft.overrides, (i) => (i < index ? [i] : i === index ? [index, index + 1] : [i + 1]));
+          // the original and everything above it renumber up one. Assembly
+          // checks only shift: the clone has not been built, so it starts
+          // unchecked.
+          draft.overrides = remapLayerKeys(draft.overrides, (i) => (i < index ? [i] : i === index ? [index, index + 1] : [i + 1]));
+          if (draft.progress.assemble) draft.progress.assemble = remapLayerKeys(draft.progress.assemble, (i) => [i >= index ? i + 1 : i]);
           draft.stack.layers.splice(index, 0, structuredClone(draft.stack.layers[index]));
         });
         // The clone takes the original's slot in display order, directly
@@ -466,7 +482,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         const order = draft.stack.layers.map((_, i) => i);
         const [moved] = order.splice(index, 1);
         order.splice(target, 0, moved);
-        draft.overrides = remapLayerOverrides(draft.overrides, (i) => [order.indexOf(i)]);
+        const permute = (i: number) => [order.indexOf(i)];
+        draft.overrides = remapLayerKeys(draft.overrides, permute);
+        if (draft.progress.assemble) draft.progress.assemble = remapLayerKeys(draft.progress.assemble, permute);
         const [row] = draft.stack.layers.splice(index, 1);
         draft.stack.layers.splice(target, 0, row);
       }),

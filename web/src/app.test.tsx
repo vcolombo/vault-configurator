@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App";
 import { applyBomResult, applyPlanProgress, signature } from "./store";
-import { layerOverridesAt, remapLayerOverrides } from "./stack";
+import { remapLayerKeys } from "./stack";
 import type { Meta, PlannerState } from "./types";
 
 // jsdom has no WebGL; the dialog lifecycle is what is under test, so stub the three.js surface Viewer touches.
@@ -901,34 +901,25 @@ test("replacing the stack clears a pending layer Undo", async () => {
   expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
 });
 
-test("remapLayerOverrides renumbers layer groups and leaves other keys alone", () => {
+test("remapLayerKeys renumbers layer groups and leaves other keys alone", () => {
   const overrides = {
     "L1 · S5 2U drawers|Latch": { role: "accent" },
     "L2 · S5 2U drawers|Latch": { role: "dark" },
     "Roof|Roof Whole": { role: "main" },
   };
   // Insert at 0 with inheritance (duplicate): L1 copies stay and move, L2 shifts.
-  expect(Object.keys(remapLayerOverrides(overrides, (i) => (i === 0 ? [0, 1] : [i + 1]))).sort()).toEqual([
+  expect(Object.keys(remapLayerKeys(overrides, (i) => (i === 0 ? [0, 1] : [i + 1]))).sort()).toEqual([
     "L1 · S5 2U drawers|Latch", "L2 · S5 2U drawers|Latch", "L3 · S5 2U drawers|Latch", "Roof|Roof Whole",
   ]);
   // Remove at 0: its keys drop, higher layers shift down.
-  expect(Object.keys(remapLayerOverrides(overrides, (i) => (i === 0 ? [] : [i - 1]))).sort()).toEqual([
+  expect(Object.keys(remapLayerKeys(overrides, (i) => (i === 0 ? [] : [i - 1]))).sort()).toEqual([
     "L1 · S5 2U drawers|Latch", "Roof|Roof Whole",
   ]);
-});
-
-test("layerOverridesAt captures only the removed layer keys", () => {
-  // The Undo capture must not carry non-layer entries: restoring spreads the
-  // capture over current overrides, so a Roof entry here would silently roll
-  // back a roof colour changed between remove and Undo.
-  const overrides = {
+  // Undo capture (keepUntagged false): only the removed layer's entries, so
+  // restoring cannot roll back a Roof colour changed in between.
+  expect(remapLayerKeys(overrides, (i) => (i === 0 ? [0] : []), false)).toEqual({
     "L1 · S5 2U drawers|Latch": { role: "accent" },
-    "L2 · S5 2U drawers|Latch": { role: "dark" },
-    "Roof|Roof Whole": { role: "main" },
-  };
-  expect(layerOverridesAt(overrides, 0)).toEqual({ "L1 · S5 2U drawers|Latch": { role: "accent" } });
-  expect(layerOverridesAt(overrides, 1)).toEqual({ "L2 · S5 2U drawers|Latch": { role: "dark" } });
-  expect(layerOverridesAt(overrides, 5)).toEqual({});
+  });
 });
 
 test("duplicating a layer renumbers colour overrides onto the right layers", async () => {

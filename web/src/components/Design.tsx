@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { footprintLine, partFitsScope } from "../../../planner.mjs";
 import { HELP } from "../help";
 import { INTERIOR_LABEL, LAYOUT_LABEL, ROOF_LABEL, depthOptionLabel, heightLabel, labeledChoices, layerSummary, layerTitle, patternName, roleColor, stackHeightMm } from "../labels";
-import { applyStartOver, facadeCatalog, finishCustomized, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
+import { facadeCatalog, finishCustomized, heightCatalog, isMisfitNote, layerFitNotes, layoutCatalog } from "../stack";
 import { usePlanner } from "../store";
 import type { Layer } from "../types";
 import { Card, ChoiceSelect, Grip, HelpButton, StepFooter, Switch } from "./ui";
@@ -11,7 +11,7 @@ import { Preview } from "./Preview";
 
 export function Design() {
   const store = usePlanner();
-  const { state, meta, bom, patch, showHelp, removedLayer, setRemovedLayer } = store;
+  const { state, meta, bom, patch, showHelp, removedLayer } = store;
   const [confirmReset, setConfirmReset] = useState(false);
   const depth = labeledChoices("depth", {
     choices: bom?.choices || null,
@@ -84,9 +84,7 @@ export function Design() {
                 ].filter(Boolean).join(", ").replace(/, ([^,]*)$/, ", and $1")}.</span>
                 <button type="button" className="btn" onClick={() => {
                   setConfirmReset(false);
-                  setRemovedLayer(null);
-                  store.setExpandedLayer(null);
-                  patch(applyStartOver);
+                  store.startOver();
                 }}>Start over</button>
                 <button type="button" className="btn" onClick={() => setConfirmReset(false)}>Keep my stack</button>
               </p>
@@ -96,11 +94,7 @@ export function Design() {
                   || Object.keys(state.overrides).length > 0
                   || finishCustomized(state.stack);
                 if (customized) setConfirmReset(true);
-                else {
-                  setRemovedLayer(null);
-                  store.setExpandedLayer(null);
-                  patch(applyStartOver);
-                }
+                else store.startOver();
               }}>Start over</button>
             )}
           </Card>

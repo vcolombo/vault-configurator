@@ -39,24 +39,27 @@ export function finishCustomized(stack: Stack): boolean {
 const LAYER_GROUP = /^L(\d+) · /;
 
 /**
- * Colour/qty overrides are keyed `${group}|${name}` and catalog groups carry
- * the layer number (`L{index + 1} · …`), so any insertion, removal or reorder
- * must renumber the keys or overrides silently land on the wrong layer.
- * `mapIndex` receives a 0-based layer index and returns its new index (or
- * indices, when a duplicate inherits a copy), or an empty array to drop it.
- * Keys whose group has no layer prefix pass through untouched.
+ * Records keyed `${group}|${name}` (colour overrides, assembly progress)
+ * carry the layer number in the catalog group (`L{index + 1} · …`), so any
+ * insertion, removal or reorder must renumber the keys or entries silently
+ * land on the wrong layer. `mapIndex` receives a 0-based layer index and
+ * returns its new index (or indices, when a duplicate inherits a copy), or
+ * an empty array to drop it. Keys with no layer prefix pass through unless
+ * `keepUntagged` is false — the Undo capture uses that so restoring can
+ * never roll back unrelated entries changed in between.
  */
-export function remapLayerOverrides(
-  overrides: PlannerState["overrides"],
+export function remapLayerKeys<T>(
+  record: Record<string, T>,
   mapIndex: (index: number) => number[],
-): PlannerState["overrides"] {
-  const next: PlannerState["overrides"] = {};
-  for (const [key, value] of Object.entries(overrides)) {
+  keepUntagged = true,
+): Record<string, T> {
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
     const bar = key.indexOf("|");
     const group = bar >= 0 ? key.slice(0, bar) : key;
     const match = LAYER_GROUP.exec(group);
     if (!match) {
-      next[key] = value;
+      if (keepUntagged) next[key] = value;
       continue;
     }
     for (const target of mapIndex(Number(match[1]) - 1)) {
@@ -64,22 +67,6 @@ export function remapLayerOverrides(
     }
   }
   return next;
-}
-
-/** Only the override entries belonging to one layer (for the Undo capture —
- * restoring must never roll back unrelated overrides changed in between). */
-export function layerOverridesAt(
-  overrides: PlannerState["overrides"],
-  index: number,
-): PlannerState["overrides"] {
-  const out: PlannerState["overrides"] = {};
-  for (const [key, value] of Object.entries(overrides)) {
-    const bar = key.indexOf("|");
-    const group = bar >= 0 ? key.slice(0, bar) : key;
-    const match = LAYER_GROUP.exec(group);
-    if (match && Number(match[1]) - 1 === index) out[key] = value;
-  }
-  return out;
 }
 
 export function newLayer(stack: Stack, meta: Meta): Layer {
