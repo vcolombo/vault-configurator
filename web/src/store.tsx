@@ -513,7 +513,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
               at.layout = captured.layout;
               at.height = captured.height;
               at.facades = structuredClone(captured.facades);
-              if (insertAt !== restore.index) return;
               const original = pos >= restore.index ? pos + 1 : pos;
               const restoreKeys = <T,>(snapshot: Record<string, T>, into: Record<string, T>) => {
                 for (const [key, value] of Object.entries(remapLayerKeys(snapshot, (i) => (i === original ? [original] : []), false))) {
