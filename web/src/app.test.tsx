@@ -1295,6 +1295,37 @@ test("a checklist reset keeps Undo from resurrecting captured survivor checks", 
   });
 });
 
+test("a Roof recompute after a checklist reset does not block Undo geometry recovery", async () => {
+  const user = userEvent.setup();
+  seedSsStack({ "L2 · SS5 2U drawers|Latch": { qty: 2, done: true } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(true);
+  });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+  await user.click(screen.getByRole("tab", { name: "4 Assemble" }));
+  await user.click(screen.getByRole("checkbox", { name: "2× Latch" }));
+  await user.click(await screen.findByRole("button", { name: "Review checklist again" }));
+  await user.click(screen.getByRole("tab", { name: /Design/ }));
+  // An unrelated edit recomputes the BOM; reconciliation's recreated
+  // unchecked entries must not be mistaken for user edits of the survivor.
+  await user.selectOptions(screen.getByLabelText("Roof"), "grid");
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(false);
+  });
+  expect(screen.getByLabelText("Roof")).toHaveValue("grid");
+});
+
 test("checking the normalized survivor in Assemble keeps Undo from reverting it to SS", async () => {
   const user = userEvent.setup();
   seedSsStack();

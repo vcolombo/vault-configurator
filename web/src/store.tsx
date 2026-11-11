@@ -568,11 +568,18 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       // invalidated here so restoreLayer cannot resurrect them. The layer
       // and survivor geometry recovery are unaffected.
       resetChecklist: () => {
+        // Uncheck in place rather than emptying: reconciliation recreates
+        // missing entries as unchecked on the next recompute, and the
+        // capture baseline set here must match that recreated form or Undo
+        // would mistake an unrelated recompute for a user edit.
+        const unchecked = Object.fromEntries(
+          Object.entries(stateRef.current?.progress.assemble || {}).map(([key, entry]) => [key, { ...entry, done: false }]),
+        );
         patch((draft) => {
           draft.progress.hardware = {};
-          draft.progress.assemble = {};
+          draft.progress.assemble = structuredClone(unchecked);
         });
-        setRemovedLayer((current) => (current ? { ...current, assemble: {}, survivorAssemble: {}, baselineAssemble: {} } : current));
+        setRemovedLayer((current) => (current ? { ...current, assemble: {}, survivorAssemble: {}, baselineAssemble: unchecked } : current));
       },
       startOver: () => replaceStack(applyStartOver),
       duplicateLayer: (index) => {
