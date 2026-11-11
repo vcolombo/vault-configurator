@@ -45,7 +45,7 @@ type Store = {
   setSettingsSection: (section: SettingsSection) => void;
   removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
   setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
-  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"]; assemble: NonNullable<PlannerState["progress"]["assemble"]>; survivors: Layer[] } | null;
+  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"]; assemble: NonNullable<PlannerState["progress"]["assemble"]>; survivors: Layer[]; baseline: Layer[]; survivorOverrides: PlannerState["overrides"]; survivorAssemble: NonNullable<PlannerState["progress"]["assemble"]> } | null;
   setRemovedLayer: (removed: Store["removedLayer"]) => void;
   restoreLayer: () => void;
   startOver: () => void;
@@ -172,11 +172,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("printers");
   const [removedPrinter, setRemovedPrinter] = useState<Store["removedPrinter"]>(null);
   const [removedLayer, setRemovedLayer] = useState<Store["removedLayer"]>(null);
-  // Survivor positions (post-removal indices) the user edited while a layer
-  // Undo is pending. User edits flow through patch(); BOM normalization does
-  // not (it lands via applyBomResult), so patch-time divergence from the
-  // capture marks exactly the layers Undo must not revert.
-  const editedSurvivorsRef = useRef<Set<number>>(new Set());
+  const removedLayerRef = useRef<Store["removedLayer"]>(null);
   const [archive, setArchive] = useState<{ done: number; total: number; msg?: string }>({ done: 0, total: 0 });
   const [status, setStatus] = useState("");
   const [exportStatus, setExportStatus] = useState("");
@@ -191,6 +187,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const [presetStatus, setPresetStatus] = useState("");
   const stateRef = useRef<PlannerState | null>(null);
   stateRef.current = state;
+  removedLayerRef.current = removedLayer;
 
   // The pending printer-removal Undo lives here, not in Settings, so it survives section
   // switches and closing Settings. A selection the user changes after the removal is their
@@ -291,7 +288,22 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           setBom(next);
           setBomSig(requestSig);
           setStatus("");
-          setState((prev) => (prev ? applyBomResult(prev, requestSig, next) : prev));
+          setState((prev) => {
+            if (!prev) return prev;
+            const applied = applyBomResult(prev, requestSig, next);
+            // BOM adoption is the only non-user layer writer: when it rewrites
+            // a pending capture's baseline layers (normalization), advance the
+            // baseline to what was written, so restore can tell normalization
+            // apart from user edits. Deferred out of the updater.
+            const capture = removedLayerRef.current;
+            if (capture
+              && JSON.stringify(prev.stack.layers) === JSON.stringify(capture.baseline)
+              && JSON.stringify(applied.stack.layers) !== JSON.stringify(prev.stack.layers)) {
+              const baseline = applied.stack.layers;
+              queueMicrotask(() => setRemovedLayer((current) => (current === capture ? { ...capture, baseline } : current)));
+            }
+            return applied;
+          });
         } catch (error) {
           if (!cancel) setStatus(error instanceof Error ? error.message : "Could not compute this stack.");
         }
@@ -350,13 +362,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         recipe(next);
         legalExportMode(next.settings);
         legalFitTarget(next);
-        if (removedLayer) {
-          // Only this recipe's own changes count: survivors already rewritten
-          // by BOM normalization differ from the capture through no user edit.
-          removedLayer.survivors.forEach((_, pos) => {
-            if (JSON.stringify(next.stack.layers[pos]) !== JSON.stringify(prev.stack.layers[pos])) editedSurvivorsRef.current.add(pos);
-          });
-        }
         return next;
       });
     };
@@ -370,7 +375,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     // Undo and the open editor index address the stack being thrown away.
     const replaceStack = (recipe: (draft: PlannerState) => void) => {
       setRemovedLayer(null);
-      editedSurvivorsRef.current = new Set();
       setExpandedLayer(null);
       patch(recipe);
     };
@@ -433,16 +437,22 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         // layer at its index, with its colour overrides and assembly checks;
         // a second removal replaces the capture. The capture holds only this
         // layer's entries, so restoring cannot roll back unrelated changes.
-        editedSurvivorsRef.current = new Set();
         setRemovedLayer(structuredClone({
           layer,
           index,
           overrides: remapLayerKeys(current.overrides, (i) => (i === index ? [index] : []), false),
           assemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [index] : []), false),
-          // Pre-removal copies of the surviving layers, in post-removal order:
-          // the BOM round-trip normalizes survivors against the new base
-          // (an exposed SS layer becomes S), and Undo reverts exactly that.
+          // Pre-removal copies of the surviving layers, in post-removal order,
+          // plus their tagged record entries: the BOM round-trip normalizes
+          // survivors against the new base (an exposed SS layer becomes S,
+          // renaming its catalog group and orphaning its checks), and Undo
+          // reverts exactly that. `baseline` starts as the same list and is
+          // advanced by BOM adoption alone, so restore can tell normalization
+          // apart from user edits.
           survivors: current.stack.layers.filter((_, i) => i !== index),
+          baseline: current.stack.layers.filter((_, i) => i !== index),
+          survivorOverrides: remapLayerKeys(current.overrides, (i) => (i === index ? [] : [i]), false),
+          survivorAssemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [] : [i]), false),
         }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
         patch((draft) => {
@@ -455,7 +465,6 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       restoreLayer: () => {
         const restore = removedLayer;
         if (!restore) return;
-        const edited = new Set(editedSurvivorsRef.current);
         setRemovedLayer(null);
         // Inverse of removeLayer's shift: indices at or above the insertion
         // point move up one, so the open editor keeps its layer.
@@ -465,6 +474,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         });
         patch((draft) => {
           const insertAt = Math.min(restore.index, draft.stack.layers.length);
+          const spliced = draft.stack.layers.length !== restore.baseline.length;
           const up = (i: number) => [i >= insertAt ? i + 1 : i];
           draft.overrides = {
             ...remapLayerKeys(draft.overrides, up),
@@ -477,19 +487,32 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             };
           }
           draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
-          // Revert BOM normalization (layout/height/facades) on survivors the
-          // user has not edited since the removal — patch() tracked those
-          // positions, so an intervening edit of any field wins over the revert.
-          restore.survivors.forEach((captured, pos) => {
-            if (edited.has(pos)) return;
-            const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
-            if (!at) return;
-            at.layout = captured.layout;
-            at.height = captured.height;
-            at.facades = structuredClone(captured.facades);
-          });
+          // Revert BOM normalization where a survivor still deep-equals its
+          // baseline (the last BOM-adopted form): any user edit, move, or
+          // splice breaks that equality and the row is left alone. A spliced
+          // list (add/remove/duplicate since) skips field reverts entirely —
+          // positions no longer identify survivors. Reverted rows also get
+          // back the tagged entries reconciliation dropped when normalization
+          // renamed their group, without overwriting anything present now.
+          if (!spliced) {
+            restore.survivors.forEach((captured, pos) => {
+              const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
+              if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
+              at.layout = captured.layout;
+              at.height = captured.height;
+              at.facades = structuredClone(captured.facades);
+              if (insertAt !== restore.index) return;
+              const original = pos >= restore.index ? pos + 1 : pos;
+              const restoreKeys = <T,>(snapshot: Record<string, T>, into: Record<string, T>) => {
+                for (const [key, value] of Object.entries(remapLayerKeys(snapshot, (i) => (i === original ? [original] : []), false))) {
+                  if (!(key in into)) into[key] = structuredClone(value);
+                }
+              };
+              restoreKeys(restore.survivorOverrides, draft.overrides);
+              if (draft.progress.assemble) restoreKeys(restore.survivorAssemble, draft.progress.assemble);
+            });
+          }
         });
-        editedSurvivorsRef.current = new Set();
       },
       startOver: () => replaceStack(applyStartOver),
       duplicateLayer: (index) => {

@@ -1031,16 +1031,22 @@ test("Start over clears assembly checks so a re-added layer starts unchecked", a
   });
 });
 
-function seedSsStack() {
+function seedSsStack(assemble: Record<string, { qty: number; done: boolean }> = {}) {
   const baseDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "key" };
   const ssDrawer = { ...hardenDrawer, layout: "SS", facades: [[1, 1], [2]], interior: "none", key: "none" };
   localStorage.setItem("vault-configurator", JSON.stringify({
     tab: "stack",
     stack: { name: "my-vault", depth: 5, layers: [baseDrawer, ssDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    progress: { layoutKey: "", plates: {}, hardware: {}, assemble },
     settings: meta.defaults,
   }));
+  stubBomNormalizing();
+}
+
+function stubBomNormalizing() {
   // Emulate stackfit.normalize for this shape: SS is only legal above an L
-  // base; exposed as the base it is rewritten to S with a single bay.
+  // base; exposed as the base it is rewritten to S with a single bay. Part
+  // groups follow the normalized layout, like the real catalog.
   const base = vi.mocked(fetch).getMockImplementation()!;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
     const response = await base(input, init);
@@ -1050,8 +1056,16 @@ function seedSsStack() {
     const layers = (requested.stack?.layers || []).map((layer, i) => (
       i === 0 && layer.layout === "SS" ? { ...layer, layout: "S", facades: [[1, 1]] } : layer
     ));
-    return json({ ...body, stack: { ...requested.stack, layers }, parts: [], hardware: [] });
+    const parts = layers.map((layer, i) => ({
+      group: `L${i + 1} · ${String(layer.layout)}5 2U drawers`, name: "Latch", qty: 2, role: "lock", file: "", size: [10, 10, 10],
+    }));
+    return json({ ...body, stack: { ...requested.stack, layers }, parts, hardware: [] });
   }));
+}
+
+function persistedLayouts(): string[] {
+  const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}") as Partial<PlannerState>;
+  return (saved.stack?.layers || []).map((layer) => layer.layout);
 }
 
 test("Undo restores SS settings the BOM normalization rewrote after base removal", async () => {
@@ -1100,6 +1114,68 @@ test("Undo still reverts normalization after an unrelated edit elsewhere", async
   expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Edit SS drawer" })).toBeInTheDocument();
   expect(screen.getByLabelText("Roof")).toHaveValue("grid");
+});
+
+test("Undo restores assembly checks normalization invalidated by the group rename", async () => {
+  const user = userEvent.setup();
+  seedSsStack({ "L2 · SS5 2U drawers|Latch": { qty: 2, done: true } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(true);
+  });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  // Normalization renames the group to S, so reconciliation drops the check.
+  await screen.findByText("2 boxes · empty · no lock");
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(true);
+  });
+});
+
+test("duplicating a normalized survivor keeps Undo from stamping SS onto the clone", async () => {
+  const user = userEvent.setup();
+  seedSsStack();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  await user.click(screen.getByRole("button", { name: "Edit S drawer" }));
+  await user.click(screen.getByRole("button", { name: "Duplicate layer" }));
+  await waitFor(() => {
+    expect(persistedLayouts()).toEqual(["S", "S"]);
+  });
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  // The layer list was spliced since capture, so field reverts are refused:
+  // the base returns, both S layers stay S, nothing becomes SS.
+  await waitFor(() => {
+    expect(persistedLayouts()).toEqual(["L", "S", "S"]);
+  });
+});
+
+test("a second removal replaces the capture and its Undo still reverts normalization", async () => {
+  const user = userEvent.setup();
+  const baseDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "key" };
+  const ssDrawer = { ...hardenDrawer, layout: "SS", facades: [[1, 1], [2]], interior: "none", key: "none" };
+  const topDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "hidden" };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [baseDrawer, ssDrawer, topDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBomNormalizing();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  // Remove the top L first (first row shown), then the base L.
+  await user.click(screen.getAllByRole("button", { name: "Remove L drawer" })[0]);
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
+  expect(persistedLayouts()).toEqual(["L", "SS"]);
 });
 
 test("a test-plate group removed from the stack no longer enables export", async () => {
