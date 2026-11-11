@@ -17,7 +17,7 @@ import tempfile
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from shoot import DEMO, settled  # noqa: E402  same demo stack as the screenshots
+from shoot import DEMO, seed, settled  # noqa: E402  same demo stack as the screenshots
 
 APP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(APP, "docs", "media")
@@ -121,21 +121,6 @@ def busy_done(page, timeout=240000):
     page.wait_for_function(r"/\d+ pieces/.test(document.body.innerText)", timeout=timeout)
     settled(page)
 
-
-def seed(page, demo):
-    """Write the demo stack through the same localStorage state the app persists, then reload."""
-    page.evaluate("""(demo) => {
-      const raw = localStorage.getItem('vault-configurator');
-      const state = raw ? JSON.parse(raw) : {};
-      state.stack = {...(state.stack || {}), ...demo};
-      state.overrides = {};
-      state.tab = 'stack';
-      state.fitTarget = 'h2d-left';  // judge fit against the big bed, so the demo cart reads printable
-      localStorage.setItem('vault-configurator', JSON.stringify(state));
-      localStorage.setItem('vault-theme', 'light');
-      location.reload();
-    }""", demo)
-    page.get_by_role("heading", name="Compose your stack").wait_for(timeout=120000)
 
 
 def scroll(page, dy, steps=12, ms=60):

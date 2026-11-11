@@ -130,10 +130,7 @@ export function Viewer() {
       controls.dispose();
       renderer.dispose();
       mesh?.geometry.dispose();
-      if (grid) {
-        grid.geometry.dispose();
-        (Array.isArray(grid.material) ? grid.material : [grid.material]).forEach((material) => material.dispose());
-      }
+      grid?.dispose();
     };
   }, [file, viewer?.color]);
   useEffect(() => { setLoadError(""); setExportNote({ text: "" }); }, [file]);
