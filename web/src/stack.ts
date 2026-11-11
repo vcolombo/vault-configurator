@@ -72,6 +72,27 @@ export function remapLayerKeys<T>(
   return next;
 }
 
+/** The tagged entries belonging to one layer (0-based index), keys unchanged. */
+export function layerKeySlice<T>(record: Record<string, T>, index: number): Record<string, T> {
+  return remapLayerKeys(record, (i) => (i === index ? [index] : []), false);
+}
+
+/** `record` with one layer's tagged entries replaced by `from`'s slice. */
+export function replaceLayerKeySlice<T>(record: Record<string, T>, from: Record<string, T>, index: number): Record<string, T> {
+  return {
+    ...remapLayerKeys(record, (i) => (i === index ? [] : [i]), false),
+    ...layerKeySlice(from, index),
+  };
+}
+
+/** Whether two records hold the same tagged entries for one layer. */
+export function sameLayerKeySlice<T>(a: Record<string, T>, b: Record<string, T>, index: number): boolean {
+  const canonical = (record: Record<string, T>) => JSON.stringify(
+    Object.entries(layerKeySlice(record, index)).sort(([x], [y]) => (x < y ? -1 : 1)),
+  );
+  return canonical(a) === canonical(b);
+}
+
 export function newLayer(stack: Stack, meta: Meta): Layer {
   const base = stack.layers[0] ? familyOf(meta, stack.layers[0].layout) : "";
   const layout = base ? meta.allowed[base]?.[0] || "S" : "S";

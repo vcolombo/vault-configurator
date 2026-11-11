@@ -17,7 +17,7 @@ import {
 } from "../../planner.mjs";
 import { getJson, postJson } from "./api";
 import { uid } from "./labels";
-import { applyStartOver, newLayer, remapLayerKeys } from "./stack";
+import { applyStartOver, layerKeySlice, newLayer, remapLayerKeys, replaceLayerKeySlice, sameLayerKeySlice } from "./stack";
 import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Printer, SettingsSection, Spool, TabId, ThemeChoice } from "./types";
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
@@ -325,16 +325,12 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
               let baseline: Layer[] | null = null;
               let baselineOverrides = capture.baselineOverrides;
               let baselineAssemble = capture.baselineAssemble;
-              const replaceSlice = <T,>(record: Record<string, T>, from: Record<string, T>, pos: number) => ({
-                ...remapLayerKeys(record, (i) => (i === pos ? [] : [i]), false),
-                ...remapLayerKeys(from, (i) => (i === pos ? [pos] : []), false),
-              });
               capture.baseline.forEach((row, pos) => {
                 if (JSON.stringify(prev.stack.layers[pos]) === JSON.stringify(row)
                   && JSON.stringify(applied.stack.layers[pos]) !== JSON.stringify(row)) {
                   (baseline ??= [...capture.baseline])[pos] = applied.stack.layers[pos];
-                  baselineOverrides = replaceSlice(baselineOverrides, applied.overrides, pos);
-                  baselineAssemble = replaceSlice(baselineAssemble, applied.progress.assemble || {}, pos);
+                  baselineOverrides = replaceLayerKeySlice(baselineOverrides, applied.overrides, pos);
+                  baselineAssemble = replaceLayerKeySlice(baselineAssemble, applied.progress.assemble || {}, pos);
                 }
               });
               if (baseline) {
@@ -518,6 +514,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         patch((draft) => {
           const insertAt = Math.min(restore.index, draft.stack.layers.length);
           const spliced = draft.stack.layers.length !== restore.baseline.length;
+          // Survivor record edits are judged in post-removal numbering,
+          // before the renumber below moves them: baseline records carry
+          // the same numbering.
+          const recordsEdited = restore.survivors.map((_, pos) => (
+            !sameLayerKeySlice(restore.baselineOverrides, draft.overrides, pos)
+            || (draft.progress.assemble ? !sameLayerKeySlice(restore.baselineAssemble, draft.progress.assemble, pos) : false)
+          ));
           const up = (i: number) => [i >= insertAt ? i + 1 : i];
           draft.overrides = {
             ...remapLayerKeys(draft.overrides, up),
@@ -541,22 +544,16 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           // back the tagged entries reconciliation dropped when normalization
           // renamed their group, without overwriting anything present now.
           if (!spliced && restore.positionsHold) {
-            const sorted = (record: Record<string, unknown>) => JSON.stringify(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : 1)));
-            const recordsEdited = (baselineRecord: Record<string, unknown>, currentRecord: Record<string, unknown>, pos: number, original: number) => (
-              sorted(remapLayerKeys(baselineRecord, (i) => (i === pos ? [original] : []), false))
-              !== sorted(remapLayerKeys(currentRecord, (i) => (i === original ? [original] : []), false))
-            );
             restore.survivors.forEach((captured, pos) => {
               const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
               if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
               const original = pos >= restore.index ? pos + 1 : pos;
-              if (recordsEdited(restore.baselineOverrides, draft.overrides, pos, original)) return;
-              if (draft.progress.assemble && recordsEdited(restore.baselineAssemble, draft.progress.assemble, pos, original)) return;
+              if (recordsEdited[pos]) return;
               at.layout = captured.layout;
               at.height = captured.height;
               at.facades = structuredClone(captured.facades);
               const restoreKeys = <T,>(snapshot: Record<string, T>, into: Record<string, T>) => {
-                for (const [key, value] of Object.entries(remapLayerKeys(snapshot, (i) => (i === original ? [original] : []), false))) {
+                for (const [key, value] of Object.entries(layerKeySlice(snapshot, original))) {
                   if (!(key in into)) into[key] = structuredClone(value);
                 }
               };
