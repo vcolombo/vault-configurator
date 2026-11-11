@@ -1314,8 +1314,23 @@ test("a Roof recompute after a checklist reset does not block Undo geometry reco
   await user.click(screen.getByRole("tab", { name: /Design/ }));
   // An unrelated edit recomputes the BOM; reconciliation's recreated
   // unchecked entries must not be mistaken for user edits of the survivor.
+  // Gate that BOM so Undo provably happens after its adoption, not merely
+  // after the unchecked map reset already wrote synchronously.
+  let releaseBom: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { releaseBom = () => resolve(undefined); });
+  let roofBomReturned = false;
+  const inner = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    if (!String(input).includes("/api/bom")) return inner(input, init);
+    await gate;
+    const response = await inner(input, init);
+    roofBomReturned = true;
+    return response;
+  }));
   await user.selectOptions(screen.getByLabelText("Roof"), "grid");
+  releaseBom();
   await waitFor(() => {
+    expect(roofBomReturned).toBe(true);
     expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
   });
   await user.click(screen.getByRole("button", { name: "Undo" }));
