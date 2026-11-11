@@ -1213,6 +1213,59 @@ test("editing one survivor during the compute window keeps the untouched survivo
   expect(saved.stack?.layers.map((layer) => [layer.layout, layer.height])).toEqual([["L", 2], ["SS", 2], ["L", 4]]);
 });
 
+test("Undo after swapping identical survivors does not resurrect the moved override at its old key", async () => {
+  const user = userEvent.setup();
+  const drawer = { ...hardenDrawer };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [drawer, drawer, drawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    overrides: { "L3 · S5 2U drawers|Latch": { role: "accent" } },
+    settings: meta.defaults,
+  }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  // Rows display top-first: the base is the last Remove.
+  const removes = screen.getAllByRole("button", { name: "Remove S drawer" });
+  await user.click(removes[removes.length - 1]);
+  // Move the top survivor (which carries the override) toward the base.
+  await user.click(screen.getAllByRole("button", { name: "Edit S drawer" })[0]);
+  await user.click(screen.getByRole("button", { name: "Move toward base" }));
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  await waitFor(() => {
+    const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}") as Partial<PlannerState>;
+    expect(saved.stack?.layers).toHaveLength(3);
+    // The override followed its layer to L2; recovery must not also
+    // resurrect it at the captured L3 key.
+    expect(saved.overrides).toEqual({ "L2 · S5 2U drawers|Latch": { role: "accent" } });
+  });
+});
+
+test("a checklist reset keeps Undo from resurrecting captured survivor checks", async () => {
+  const user = userEvent.setup();
+  seedSsStack({ "L2 · SS5 2U drawers|Latch": { qty: 2, done: true } });
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(true);
+  });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+  // Complete the remaining checklist, then explicitly reset it.
+  await user.click(screen.getByRole("tab", { name: "4 Assemble" }));
+  await user.click(screen.getByRole("checkbox", { name: "2× Latch" }));
+  await user.click(await screen.findByRole("button", { name: "Review checklist again" }));
+  await user.click(screen.getByRole("tab", { name: /Design/ }));
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  // Geometry reverts, but the reset checks do not come back.
+  expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(persistedAssembleDone()["L2 · SS5 2U drawers|Latch"]).toBe(false);
+  });
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

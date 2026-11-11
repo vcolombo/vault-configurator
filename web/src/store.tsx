@@ -507,7 +507,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           // back the tagged entries reconciliation dropped when normalization
           // renamed their group, without overwriting anything present now.
           if (!spliced) {
+            const baselineRows = restore.baseline.map((row) => JSON.stringify(row));
             restore.survivors.forEach((captured, pos) => {
+              // Equal-valued baseline rows are interchangeable: after a swap
+              // of identical (or normalization-collapsed) layers, position no
+              // longer identifies which survivor this is, so recovering its
+              // fields or tagged entries could stamp them on the wrong layer.
+              if (baselineRows.indexOf(baselineRows[pos]) !== baselineRows.lastIndexOf(baselineRows[pos])) return;
               const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
               if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
               at.layout = captured.layout;
