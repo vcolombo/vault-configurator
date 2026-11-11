@@ -1086,6 +1086,22 @@ test("Undo does not revert a survivor the user edited after normalization", asyn
   });
 });
 
+test("Undo still reverts normalization after an unrelated edit elsewhere", async () => {
+  const user = userEvent.setup();
+  seedSsStack();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  // An unrelated patch (Roof) after normalization must not mark the
+  // untouched survivor as user-edited.
+  await user.selectOptions(screen.getByLabelText("Roof"), "grid");
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Edit SS drawer" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Roof")).toHaveValue("grid");
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

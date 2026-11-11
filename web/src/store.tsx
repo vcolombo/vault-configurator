@@ -351,9 +351,10 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         legalExportMode(next.settings);
         legalFitTarget(next);
         if (removedLayer) {
-          removedLayer.survivors.forEach((captured, pos) => {
-            const current = next.stack.layers[pos];
-            if (current && JSON.stringify(current) !== JSON.stringify(captured)) editedSurvivorsRef.current.add(pos);
+          // Only this recipe's own changes count: survivors already rewritten
+          // by BOM normalization differ from the capture through no user edit.
+          removedLayer.survivors.forEach((_, pos) => {
+            if (JSON.stringify(next.stack.layers[pos]) !== JSON.stringify(prev.stack.layers[pos])) editedSurvivorsRef.current.add(pos);
           });
         }
         return next;
