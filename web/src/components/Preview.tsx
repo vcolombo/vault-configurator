@@ -30,7 +30,7 @@ function layerFronts(layer: Layer, meta: Meta, blockY: number, blockHeight: numb
   const frontGap = 4;
   const fronts: Front[] = [];
   let bayX = innerX;
-  bays.forEach((bay, bayIndex) => {
+  bays.forEach((_bay, bayIndex) => {
     const bayW = (innerW - bayGap * (bays.length - 1)) * (bayWidths[bayIndex] / totalBayW);
     const x = bayX;
     bayX += bayW + bayGap;
@@ -39,7 +39,7 @@ function layerFronts(layer: Layer, meta: Meta, blockY: number, blockHeight: numb
     let frontY = blockY;
     units.forEach((unit, frontIndex) => {
       const height = (blockHeight - frontGap * (units.length - 1)) * (Number(unit) / unitsInBay);
-      fronts.push({ key: `${bay}-${frontIndex}`, x, y: frontY, width: bayW, height, knobW: Math.min(32, bayW * 0.4), lid: false });
+      fronts.push({ key: `${bayIndex}-${frontIndex}`, x, y: frontY, width: bayW, height, knobW: Math.min(32, bayW * 0.4), lid: false });
       frontY += height + frontGap;
     });
   });

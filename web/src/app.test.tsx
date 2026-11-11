@@ -1177,8 +1177,12 @@ test("a second removal replaces the capture and its Undo still reverts normaliza
     settings: meta.defaults,
   }));
   stubBomNormalizing();
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
   render(<App />);
   await screen.findByRole("heading", { name: "Compose your stack" });
+  // The SS layer has two bays both named S; their Preview fronts must not collide on React keys.
+  expect(consoleError.mock.calls.filter((call) => String(call[0]).includes("same key"))).toEqual([]);
+  consoleError.mockRestore();
   // Remove the top L first (first row shown), then the base L.
   await user.click(screen.getAllByRole("button", { name: "Remove L drawer" })[0]);
   await user.click(screen.getByRole("button", { name: "Remove L drawer" }));

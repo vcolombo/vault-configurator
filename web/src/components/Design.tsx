@@ -485,7 +485,7 @@ function HelpCard() {
       ) : (
         <p className="note">Click a labelled option. What it changes, the manual page, and the parts in your size show up here.</p>
       )}
-      {block && helpReturn && helpReturn.topic === helpTopic ? (
+      {block && helpReturn && helpReturn.topic === helpTopic && helpReturn.target.isConnected ? (
         <p><button type="button" className="btn ghost sm" onClick={returnFromHelp}><Icon name="arrow-left" />Back to {helpReturn.label}</button></p>
       ) : null}
       </div>

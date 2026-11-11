@@ -2,6 +2,9 @@
    Imported into the components layer by ../styles.css; no @layer wrapper here. */
   .printer-table {
     table-layout: fixed;
+    /* Below this the fixed Bed/Z columns starve Name/Profile; let
+       .table-wrap scroll instead of crushing the identity fields. */
+    min-inline-size: 34rem;
   }
 
   .printer-table col.printer-use {

@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes } from "react";
+import { Fragment, useState, type InputHTMLAttributes } from "react";
 import { legalExportMode, legalFitTarget, printerLabel, printerRemovalNotes, removePrinterById, restorePrinter, spoolLabel } from "../../../planner.mjs";
 import { presetsFor } from "../presets";
 import { usePlanner } from "../store";
@@ -94,30 +94,37 @@ function Printers() {
           </thead>
           <tbody>
             {state.settings.printers.map((printer) => (
-              <tr key={printer.id}>
+              <Fragment key={printer.id}>
+              <tr>
                 <td>
                   <input aria-label={`Enabled ${printerLabel(printer) || printer.id}`} type="checkbox" checked={printer.enabled !== false} onChange={(event) => patch((draft) => {
                     const row = findPrinter(draft.settings.printers, printer.id);
                     row.enabled = event.target.checked;
                   })} />
                 </td>
-                <td><input aria-label={`Name for ${printer.id}`} title={printer.name || undefined} value={printer.name} onChange={(event) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).name = event.target.value; })} /></td>
+                <td><input type="text" aria-label={`Name for ${printer.id}`} title={printer.name || undefined} value={printer.name} onChange={(event) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).name = event.target.value; })} /></td>
                 <td className="mono">
                   <NumberField label={`Bed X for ${printer.id}`} value={printer.bed[0]} min={0} exclusiveMin onCommit={(next) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).bed[0] = next; })} />
                   <NumberField label={`Bed Y for ${printer.id}`} value={printer.bed[1]} min={0} exclusiveMin onCommit={(next) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).bed[1] = next; })} />
                 </td>
                 <td><NumberField label={`Z for ${printer.id}`} value={printer.z} min={0} exclusiveMin onCommit={(next) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).z = next; })} /></td>
-                <td><input aria-label={`Profile for ${printer.id}`} title={printer.profile || undefined} value={printer.profile || ""} onChange={(event) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).profile = event.target.value; })} /></td>
-                <td>{confirmId === printer.id ? (
-                  <span className="confirm-remove">
-                    {impact(printer).length ? <span className="note">{printerLabel(printer) || printer.id} is {impact(printer).join("; ")}.</span> : null}
-                    <button type="button" className="btn" onClick={() => remove(printer)}>Remove {printerLabel(printer) || printer.id}</button>
-                    <button type="button" className="btn" onClick={() => setConfirmId("")}>Keep</button>
-                  </span>
-                ) : (
+                <td><input type="text" aria-label={`Profile for ${printer.id}`} title={printer.profile || undefined} value={printer.profile || ""} onChange={(event) => patch((draft) => { findPrinter(draft.settings.printers, printer.id).profile = event.target.value; })} /></td>
+                <td>{confirmId !== printer.id ? (
                   <button type="button" className="icon-btn" aria-label={`Remove ${printerLabel(printer) || printer.id}`} onClick={() => setConfirmId(printer.id)}><Icon name="x" /></button>
-                )}</td>
+                ) : null}</td>
               </tr>
+              {confirmId === printer.id ? (
+                <tr>
+                  <td colSpan={6}>
+                    <span className="confirm-remove">
+                      {impact(printer).length ? <span className="note">{printerLabel(printer) || printer.id} is {impact(printer).join("; ")}.</span> : null}
+                      <button type="button" className="btn" onClick={() => remove(printer)}>Remove {printerLabel(printer) || printer.id}</button>
+                      <button type="button" className="btn" onClick={() => setConfirmId("")}>Keep</button>
+                    </span>
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
