@@ -3,7 +3,7 @@ import { familyOf } from "../stack";
 import { usePlanner } from "../store";
 
 export function Preview() {
-  const { state, meta, bom } = usePlanner();
+  const { state, meta, bom, expandedLayer } = usePlanner();
   const stack = state.stack;
   const layers = stack.layers;
   const topFirst = [...layers].reverse();
@@ -18,9 +18,9 @@ export function Preview() {
   const gap = 6;
   const pad = 16;
   let y = pad + 8;
-  const blocks = topFirst.map((layer) => {
+  const blocks = topFirst.map((layer, visual) => {
     const height = (SHEET_H[layer.height] || 51.5) * scale;
-    const block = { layer, y, height };
+    const block = { layer, index: layers.length - 1 - visual, y, height };
     y += height + gap;
     return block;
   });
@@ -40,16 +40,54 @@ export function Preview() {
         {layers.length ? (
           <svg className="cabinet" viewBox={`0 0 ${drawW + pad * 2} ${svgH}`} role="img" aria-label="Stack preview">
             <rect x={pad} y={blocks[0]?.y || pad} width={drawW} height={Math.max(8, y - (blocks[0]?.y || pad) - gap)} rx="10" fill="none" stroke="currentColor" strokeWidth="3" />
-            {blocks.map((block) => (
-              <g key={`${block.layer.layout}-${block.y}`}>
-                <rect x={pad + 8} y={block.y} width={drawW - 16} height={block.height} rx="7" fill={body} stroke="currentColor" strokeWidth="2.25" />
-                {block.layer.type === "Drawers" ? (
-                  <rect x={pad + drawW / 2 - 16} y={block.y + block.height / 2 - 3} width="32" height="6" rx="3" fill={knob} />
-                ) : (
-                  <line x1={pad + 16} y1={block.y + 10} x2={pad + drawW - 16} y2={block.y + 10} stroke="currentColor" strokeWidth="1.5" />
-                )}
-              </g>
-            ))}
+            {blocks.map((block) => {
+              const edited = expandedLayer === block.index;
+              const stroke = edited ? "var(--teal)" : "currentColor";
+              const strokeWidth = edited ? 3.25 : 2.25;
+              const innerX = pad + 8;
+              const innerW = drawW - 16;
+              if (block.layer.type !== "Drawers") {
+                return (
+                  <g key={block.index}>
+                    <rect x={innerX} y={block.y} width={innerW} height={block.height} rx="7" fill={body} stroke={stroke} strokeWidth={strokeWidth} />
+                    <line x1={pad + 16} y1={block.y + 10} x2={pad + drawW - 16} y2={block.y + 10} stroke="currentColor" strokeWidth="1.5" />
+                  </g>
+                );
+              }
+              // Facades are listed top to bottom per bay (see Help: "Facade
+              // split"); draw each front at its unit share of the layer with
+              // its own handle, across bays at their real width shares.
+              const bays = meta.layouts[block.layer.layout] || [block.layer.layout];
+              const bayWidths = bays.map((bay) => meta.width?.[familyOf(meta, bay)] || 1);
+              const totalBayW = bayWidths.reduce((sum, value) => sum + value, 0) || 1;
+              const bayGap = bays.length > 1 ? 5 : 0;
+              const frontGap = 4;
+              let bayX = innerX;
+              return (
+                <g key={block.index}>
+                  {bays.map((bay, bayIndex) => {
+                    const bayW = (innerW - bayGap * (bays.length - 1)) * (bayWidths[bayIndex] / totalBayW);
+                    const x = bayX;
+                    bayX += bayW + bayGap;
+                    const fronts = block.layer.facades?.[bayIndex]?.length ? block.layer.facades[bayIndex] : [block.layer.height];
+                    const unitsInBay = fronts.reduce((sum, unit) => sum + Number(unit || 0), 0) || block.layer.height;
+                    let frontY = block.y;
+                    return fronts.map((unit, frontIndex) => {
+                      const frontH = (block.height - frontGap * (fronts.length - 1)) * (Number(unit) / unitsInBay);
+                      const y0 = frontY;
+                      frontY += frontH + frontGap;
+                      const knobW = Math.min(32, bayW * 0.4);
+                      return (
+                        <g key={`${bay}-${frontIndex}`}>
+                          <rect x={x} y={y0} width={bayW} height={frontH} rx={Math.min(7, frontH / 3)} fill={body} stroke={stroke} strokeWidth={strokeWidth} />
+                          <rect x={x + bayW / 2 - knobW / 2} y={y0 + frontH / 2 - 3} width={knobW} height="6" rx="3" fill={knob} />
+                        </g>
+                      );
+                    });
+                  })}
+                </g>
+              );
+            })}
             <rect x={pad + 28} y={svgH - 14} width="16" height="6" rx="1" fill="currentColor" />
             <rect x={pad + drawW - 36} y={svgH - 14} width="16" height="6" rx="1" fill="currentColor" />
           </svg>
@@ -58,7 +96,7 @@ export function Preview() {
       {layers.length ? (
         <div className="badges">
           <span className="mini-chips">{backbone ? <span className="pill teal">backbone</span> : null}{pegboard ? <span className="pill teal">pegboard back</span> : null}</span>
-          <span className="pill">{units}U tall</span>
+          <span className="pill">{units}U tall · {totalMm.toFixed(1)} mm</span>
         </div>
       ) : null}
       <p className="mono note">{width.toFixed(1)} × {depth} × {totalMm.toFixed(1)} mm · W × D × H</p>
