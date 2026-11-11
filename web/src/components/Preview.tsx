@@ -1,6 +1,50 @@
 import { depthMm, roleColor, SHEET_H, stackHeightMm } from "../labels";
 import { familyOf } from "../stack";
 import { usePlanner } from "../store";
+import type { Layer, Meta } from "../types";
+
+type Front = {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  knobW: number | null;
+  lid: boolean;
+};
+
+/**
+ * Front rectangles for one layer block, in drawing coordinates. Facades are
+ * listed top to bottom per bay (see Help: "Facade split"); each front takes
+ * its unit share of the layer height, bays take their real width shares.
+ * A non-drawer layer is a single front with a lid line instead of a knob.
+ */
+function layerFronts(layer: Layer, meta: Meta, blockY: number, blockHeight: number, innerX: number, innerW: number): Front[] {
+  if (layer.type !== "Drawers") {
+    return [{ key: "front", x: innerX, y: blockY, width: innerW, height: blockHeight, knobW: null, lid: true }];
+  }
+  const bays = meta.layouts[layer.layout] || [layer.layout];
+  const bayWidths = bays.map((bay) => meta.width?.[familyOf(meta, bay)] || 1);
+  const totalBayW = bayWidths.reduce((sum, value) => sum + value, 0) || 1;
+  const bayGap = bays.length > 1 ? 5 : 0;
+  const frontGap = 4;
+  const fronts: Front[] = [];
+  let bayX = innerX;
+  bays.forEach((bay, bayIndex) => {
+    const bayW = (innerW - bayGap * (bays.length - 1)) * (bayWidths[bayIndex] / totalBayW);
+    const x = bayX;
+    bayX += bayW + bayGap;
+    const units = layer.facades?.[bayIndex]?.length ? layer.facades[bayIndex] : [layer.height];
+    const unitsInBay = units.reduce((sum, unit) => sum + Number(unit || 0), 0) || layer.height;
+    let frontY = blockY;
+    units.forEach((unit, frontIndex) => {
+      const height = (blockHeight - frontGap * (units.length - 1)) * (Number(unit) / unitsInBay);
+      fronts.push({ key: `${bay}-${frontIndex}`, x, y: frontY, width: bayW, height, knobW: Math.min(32, bayW * 0.4), lid: false });
+      frontY += height + frontGap;
+    });
+  });
+  return fronts;
+}
 
 export function Preview() {
   const { state, meta, bom, expandedLayer } = usePlanner();
@@ -44,47 +88,19 @@ export function Preview() {
               const edited = expandedLayer === block.index;
               const stroke = edited ? "var(--teal)" : "currentColor";
               const strokeWidth = edited ? 3.25 : 2.25;
-              const innerX = pad + 8;
-              const innerW = drawW - 16;
-              if (block.layer.type !== "Drawers") {
-                return (
-                  <g key={block.index}>
-                    <rect x={innerX} y={block.y} width={innerW} height={block.height} rx="7" fill={body} stroke={stroke} strokeWidth={strokeWidth} />
-                    <line x1={pad + 16} y1={block.y + 10} x2={pad + drawW - 16} y2={block.y + 10} stroke="currentColor" strokeWidth="1.5" />
-                  </g>
-                );
-              }
-              // Facades are listed top to bottom per bay (see Help: "Facade
-              // split"); draw each front at its unit share of the layer with
-              // its own handle, across bays at their real width shares.
-              const bays = meta.layouts[block.layer.layout] || [block.layer.layout];
-              const bayWidths = bays.map((bay) => meta.width?.[familyOf(meta, bay)] || 1);
-              const totalBayW = bayWidths.reduce((sum, value) => sum + value, 0) || 1;
-              const bayGap = bays.length > 1 ? 5 : 0;
-              const frontGap = 4;
-              let bayX = innerX;
+              const fronts = layerFronts(block.layer, meta, block.y, block.height, pad + 8, drawW - 16);
               return (
                 <g key={block.index}>
-                  {bays.map((bay, bayIndex) => {
-                    const bayW = (innerW - bayGap * (bays.length - 1)) * (bayWidths[bayIndex] / totalBayW);
-                    const x = bayX;
-                    bayX += bayW + bayGap;
-                    const fronts = block.layer.facades?.[bayIndex]?.length ? block.layer.facades[bayIndex] : [block.layer.height];
-                    const unitsInBay = fronts.reduce((sum, unit) => sum + Number(unit || 0), 0) || block.layer.height;
-                    let frontY = block.y;
-                    return fronts.map((unit, frontIndex) => {
-                      const frontH = (block.height - frontGap * (fronts.length - 1)) * (Number(unit) / unitsInBay);
-                      const y0 = frontY;
-                      frontY += frontH + frontGap;
-                      const knobW = Math.min(32, bayW * 0.4);
-                      return (
-                        <g key={`${bay}-${frontIndex}`}>
-                          <rect x={x} y={y0} width={bayW} height={frontH} rx={Math.min(7, frontH / 3)} fill={body} stroke={stroke} strokeWidth={strokeWidth} />
-                          <rect x={x + bayW / 2 - knobW / 2} y={y0 + frontH / 2 - 3} width={knobW} height="6" rx="3" fill={knob} />
-                        </g>
-                      );
-                    });
-                  })}
+                  {fronts.map((front) => (
+                    <g key={front.key}>
+                      <rect x={front.x} y={front.y} width={front.width} height={front.height} rx={Math.min(7, front.height / 3)} fill={body} stroke={stroke} strokeWidth={strokeWidth} />
+                      {front.lid ? (
+                        <line x1={pad + 16} y1={front.y + 10} x2={pad + drawW - 16} y2={front.y + 10} stroke="currentColor" strokeWidth="1.5" />
+                      ) : front.knobW != null ? (
+                        <rect x={front.x + front.width / 2 - front.knobW / 2} y={front.y + front.height / 2 - 3} width={front.knobW} height="6" rx="3" fill={knob} />
+                      ) : null}
+                    </g>
+                  ))}
                 </g>
               );
             })}
