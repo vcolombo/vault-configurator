@@ -74,9 +74,9 @@ type Store = {
   helpTopic: string;
   helpSerial: number;
   helpAsk: number;
-  helpReturn: { topic: string; label: string; target: HTMLElement | null } | null;
+  helpReturn: { topic: string; label: string; target: HTMLElement } | null;
   showHelp: (topic: string) => void;
-  askHelp: (topic: string, label?: string, opener?: HTMLElement | null) => void;
+  askHelp: (topic: string, label: string, opener: HTMLElement) => void;
   returnFromHelp: () => void;
   expandedLayer: number | null;
   setExpandedLayer: (index: number | null) => void;
@@ -453,20 +453,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       helpSerial,
       helpAsk,
       helpReturn,
-      showHelp: (topic) => {
-        if (helpReturn && helpReturn.topic !== topic) setHelpReturn(null);
-        openHelp(topic);
-      },
+      showHelp: (topic) => { openHelp(topic); },
       // askHelp is a deliberate request (a ? button): like showHelp, plus the
       // Help card may scroll itself into view when it is off-screen, and the
       // opener is remembered so Help can offer a way back to the field.
       askHelp: (topic, label, opener) => {
         if (!openHelp(topic)) return;
-        setHelpReturn({
-          topic,
-          label: label || topic,
-          target: opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null),
-        });
+        setHelpReturn({ topic, label, target: opener });
         setHelpAsk((serial) => serial + 1);
       },
       returnFromHelp: () => {

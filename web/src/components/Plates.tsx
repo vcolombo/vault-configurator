@@ -49,7 +49,7 @@ export function Plates() {
             <button
               type="button"
               key={printer.id}
-              className="printer-toggle"
+              className="btn printer-toggle"
               aria-pressed={printer.forExport !== false}
               aria-label={`Export ${printerLabel(printer)}`}
               onClick={() => patch((draft) => {
