@@ -31,6 +31,11 @@ type RemovedLayerCapture = {
   baseline: Layer[];
   survivorOverrides: PlannerState["overrides"];
   survivorAssemble: NonNullable<PlannerState["progress"]["assemble"]>;
+  /** Tagged records as of capture (post-removal numbering), advanced with
+   * baseline rows on BOM adoption: edits to a survivor's colours/checks
+   * under its normalized group count as user edits of that survivor. */
+  baselineOverrides: PlannerState["overrides"];
+  baselineAssemble: NonNullable<PlannerState["progress"]["assemble"]>;
   /** False once survivors are reordered: positions no longer identify them. */
   positionsHold: boolean;
 };
@@ -318,15 +323,23 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
               && capture.baseline.length === prev.stack.layers.length
               && applied.stack.layers.length === prev.stack.layers.length) {
               let baseline: Layer[] | null = null;
+              let baselineOverrides = capture.baselineOverrides;
+              let baselineAssemble = capture.baselineAssemble;
+              const replaceSlice = <T,>(record: Record<string, T>, from: Record<string, T>, pos: number) => ({
+                ...remapLayerKeys(record, (i) => (i === pos ? [] : [i]), false),
+                ...remapLayerKeys(from, (i) => (i === pos ? [pos] : []), false),
+              });
               capture.baseline.forEach((row, pos) => {
                 if (JSON.stringify(prev.stack.layers[pos]) === JSON.stringify(row)
                   && JSON.stringify(applied.stack.layers[pos]) !== JSON.stringify(row)) {
                   (baseline ??= [...capture.baseline])[pos] = applied.stack.layers[pos];
+                  baselineOverrides = replaceSlice(baselineOverrides, applied.overrides, pos);
+                  baselineAssemble = replaceSlice(baselineAssemble, applied.progress.assemble || {}, pos);
                 }
               });
               if (baseline) {
-                const nextBaseline = baseline;
-                queueMicrotask(() => setRemovedLayer((current) => (current === capture ? { ...capture, baseline: nextBaseline } : current)));
+                const next = { ...capture, baseline, baselineOverrides, baselineAssemble };
+                queueMicrotask(() => setRemovedLayer((current) => (current === capture ? next : current)));
               }
             }
             return applied;
@@ -480,6 +493,8 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           baseline: current.stack.layers.filter((_, i) => i !== index),
           survivorOverrides: remapLayerKeys(current.overrides, (i) => (i === index ? [] : [i]), false),
           survivorAssemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [] : [i]), false),
+          baselineOverrides: remapLayerKeys(current.overrides, (i) => (i === index ? [] : [i > index ? i - 1 : i]), false),
+          baselineAssemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [] : [i > index ? i - 1 : i]), false),
           positionsHold: true,
         }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
@@ -516,21 +531,30 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           }
           draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
           // Revert BOM normalization where a survivor still deep-equals its
-          // baseline (the last BOM-adopted form): any user edit breaks that
-          // equality and the row is left alone. Skipped entirely when the
-          // list was spliced (add/remove/duplicate changed its length) or
-          // reordered (positionsHold off): positions no longer identify
-          // survivors. Reverted rows also get
+          // baseline (the last BOM-adopted form) and its tagged records are
+          // untouched since adoption: any user edit — to the layer, or to
+          // its colours/checks under the normalized group — wins, and the
+          // row is left alone so those newer edits keep applying. Skipped
+          // entirely when the list was spliced (add/remove/duplicate changed
+          // its length) or reordered (positionsHold off): positions no
+          // longer identify survivors. Reverted rows also get
           // back the tagged entries reconciliation dropped when normalization
           // renamed their group, without overwriting anything present now.
           if (!spliced && restore.positionsHold) {
+            const sorted = (record: Record<string, unknown>) => JSON.stringify(Object.entries(record).sort(([a], [b]) => (a < b ? -1 : 1)));
+            const recordsEdited = (baselineRecord: Record<string, unknown>, currentRecord: Record<string, unknown>, pos: number, original: number) => (
+              sorted(remapLayerKeys(baselineRecord, (i) => (i === pos ? [original] : []), false))
+              !== sorted(remapLayerKeys(currentRecord, (i) => (i === original ? [original] : []), false))
+            );
             restore.survivors.forEach((captured, pos) => {
               const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
               if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
+              const original = pos >= restore.index ? pos + 1 : pos;
+              if (recordsEdited(restore.baselineOverrides, draft.overrides, pos, original)) return;
+              if (draft.progress.assemble && recordsEdited(restore.baselineAssemble, draft.progress.assemble, pos, original)) return;
               at.layout = captured.layout;
               at.height = captured.height;
               at.facades = structuredClone(captured.facades);
-              const original = pos >= restore.index ? pos + 1 : pos;
               const restoreKeys = <T,>(snapshot: Record<string, T>, into: Record<string, T>) => {
                 for (const [key, value] of Object.entries(remapLayerKeys(snapshot, (i) => (i === original ? [original] : []), false))) {
                   if (!(key in into)) into[key] = structuredClone(value);
@@ -551,7 +575,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           draft.progress.hardware = {};
           draft.progress.assemble = {};
         });
-        setRemovedLayer((current) => (current ? { ...current, assemble: {}, survivorAssemble: {} } : current));
+        setRemovedLayer((current) => (current ? { ...current, assemble: {}, survivorAssemble: {}, baselineAssemble: {} } : current));
       },
       startOver: () => replaceStack(applyStartOver),
       duplicateLayer: (index) => {

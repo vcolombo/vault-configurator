@@ -1295,6 +1295,29 @@ test("a checklist reset keeps Undo from resurrecting captured survivor checks", 
   });
 });
 
+test("checking the normalized survivor in Assemble keeps Undo from reverting it to SS", async () => {
+  const user = userEvent.setup();
+  seedSsStack();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await screen.findByText("2 boxes · empty · no lock");
+  await waitFor(() => {
+    expect(persistedAssembleDone()).toEqual({ "L1 · S5 2U drawers|Latch": false });
+  });
+  // A newer edit under the renamed S group: check the survivor off.
+  await user.click(screen.getByRole("tab", { name: "4 Assemble" }));
+  await user.click(screen.getByRole("checkbox", { name: "2× Latch" }));
+  await user.click(screen.getByRole("tab", { name: /Design/ }));
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  // The base returns, but the survivor stays S so its check keeps applying;
+  // reverting to SS would orphan it under the obsolete S-group key.
+  await waitFor(() => {
+    expect(persistedLayouts()).toEqual(["L", "S"]);
+    expect(persistedAssembleDone()["L2 · S5 2U drawers|Latch"]).toBe(true);
+  });
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {
