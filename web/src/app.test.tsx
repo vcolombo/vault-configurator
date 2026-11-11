@@ -1240,6 +1240,35 @@ test("Undo after swapping identical survivors does not resurrect the moved overr
   });
 });
 
+test("Undo restores SS beside a twin S layer equal to its normalized form, with no reorder", async () => {
+  const user = userEvent.setup();
+  const baseDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "key" };
+  const ssDrawer = { ...hardenDrawer, layout: "SS", facades: [[1, 1], [2]], interior: "none", key: "none" };
+  // Exactly what the normalizing stub rewrites SS to: after adoption both
+  // survivors are equal-valued, but nothing was reordered, so positions
+  // still identify them and recovery must not be refused.
+  const twinDrawer = { ...ssDrawer, layout: "S", facades: [[1, 1]] };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [baseDrawer, ssDrawer, twinDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBomNormalizing();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  await user.click(screen.getByRole("button", { name: "Remove L drawer" }));
+  await waitFor(() => {
+    expect(persistedLayouts()).toEqual(["S", "S"]);
+  });
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  await waitFor(() => {
+    expect(persistedLayouts()).toEqual(["L", "SS", "S"]);
+  });
+  const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}") as Partial<PlannerState>;
+  expect(saved.stack?.layers[1].facades).toEqual([[1, 1], [2]]);
+  expect(saved.stack?.layers[2].facades).toEqual([[1, 1]]);
+});
+
 test("a checklist reset keeps Undo from resurrecting captured survivor checks", async () => {
   const user = userEvent.setup();
   seedSsStack({ "L2 · SS5 2U drawers|Latch": { qty: 2, done: true } });

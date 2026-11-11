@@ -500,20 +500,15 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           }
           draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
           // Revert BOM normalization where a survivor still deep-equals its
-          // baseline (the last BOM-adopted form): any user edit, move, or
-          // splice breaks that equality and the row is left alone. A spliced
-          // list (add/remove/duplicate since) skips field reverts entirely —
-          // positions no longer identify survivors. Reverted rows also get
+          // baseline (the last BOM-adopted form): any user edit breaks that
+          // equality and the row is left alone. A spliced list (add/remove/
+          // duplicate since, or a reorder — moveLayer empties the baseline)
+          // skips field reverts entirely: positions no longer identify
+          // survivors. Reverted rows also get
           // back the tagged entries reconciliation dropped when normalization
           // renamed their group, without overwriting anything present now.
           if (!spliced) {
-            const baselineRows = restore.baseline.map((row) => JSON.stringify(row));
             restore.survivors.forEach((captured, pos) => {
-              // Equal-valued baseline rows are interchangeable: after a swap
-              // of identical (or normalization-collapsed) layers, position no
-              // longer identifies which survivor this is, so recovering its
-              // fields or tagged entries could stamp them on the wrong layer.
-              if (baselineRows.indexOf(baselineRows[pos]) !== baselineRows.lastIndexOf(baselineRows[pos])) return;
               const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
               if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
               at.layout = captured.layout;
@@ -547,18 +542,29 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         // beneath it; open the clone (display is top-first, index order).
         setExpandedLayer(index);
       },
-      moveLayer: (index, delta) => patch((draft) => {
+      moveLayer: (index, delta) => {
+        const layers = stateRef.current?.stack.layers;
         const target = index + delta;
-        if (target < 0 || target >= draft.stack.layers.length) return;
-        const order = draft.stack.layers.map((_, i) => i);
-        const [moved] = order.splice(index, 1);
-        order.splice(target, 0, moved);
-        const permute = (i: number) => [order.indexOf(i)];
-        draft.overrides = remapLayerKeys(draft.overrides, permute);
-        if (draft.progress.assemble) draft.progress.assemble = remapLayerKeys(draft.progress.assemble, permute);
-        const [row] = draft.stack.layers.splice(index, 1);
-        draft.stack.layers.splice(target, 0, row);
-      }),
+        if (!layers || target < 0 || target >= layers.length) return;
+        // A reorder breaks the positional identity the pending Undo's
+        // survivor recovery relies on — after a swap, equal-valued layers
+        // are interchangeable and position cannot tell them apart. Keep the
+        // layer restore; drop the survivor field/key recovery (an empty
+        // baseline makes restoreLayer treat the list as spliced).
+        if (removedLayer) setRemovedLayer({ ...removedLayer, survivors: [], baseline: [] });
+        patch((draft) => {
+          const movedTarget = index + delta;
+          if (movedTarget < 0 || movedTarget >= draft.stack.layers.length) return;
+          const order = draft.stack.layers.map((_, i) => i);
+          const [moved] = order.splice(index, 1);
+          order.splice(movedTarget, 0, moved);
+          const permute = (i: number) => [order.indexOf(i)];
+          draft.overrides = remapLayerKeys(draft.overrides, permute);
+          if (draft.progress.assemble) draft.progress.assemble = remapLayerKeys(draft.progress.assemble, permute);
+          const [row] = draft.stack.layers.splice(index, 1);
+          draft.stack.layers.splice(movedTarget, 0, row);
+        });
+      },
       saveProject: () => patch((draft) => {
         const id = draft.activeProjectId || uid();
         draft.activeProjectId = id;
