@@ -1178,6 +1178,41 @@ test("a second removal replaces the capture and its Undo still reverts normaliza
   expect(persistedLayouts()).toEqual(["L", "SS"]);
 });
 
+test("editing one survivor during the compute window keeps the untouched survivor's revert", async () => {
+  const user = userEvent.setup();
+  const baseDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "key" };
+  const ssDrawer = { ...hardenDrawer, layout: "SS", facades: [[1, 1], [2]], interior: "none", key: "none" };
+  const topDrawer = { ...hardenDrawer, layout: "L", facades: [[2]], interior: "none", key: "hidden" };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "stack",
+    stack: { name: "my-vault", depth: 5, layers: [baseDrawer, ssDrawer, topDrawer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  stubBomNormalizing();
+  // Hold BOM responses until released, so the Height edit lands while the
+  // normalization round-trip is still in flight.
+  let releaseBom: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { releaseBom = () => resolve(undefined); });
+  const inner = vi.mocked(fetch).getMockImplementation()!;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    if (String(input).includes("/api/bom")) await gate;
+    return inner(input, init);
+  }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Compose your stack" });
+  // Rows display top-first: [top L, SS, base L] — the base is the last Remove.
+  const removes = screen.getAllByRole("button", { name: "Remove L drawer" });
+  await user.click(removes[removes.length - 1]);
+  await user.click(screen.getByRole("button", { name: "Edit L drawer" }));
+  await user.selectOptions(screen.getByLabelText("Height"), "4");
+  releaseBom();
+  await screen.findByText("2 boxes · empty · no lock");
+  await user.click(screen.getByRole("button", { name: "Undo" }));
+  expect(await screen.findByText("3 boxes · empty · no lock")).toBeInTheDocument();
+  const saved = JSON.parse(localStorage.getItem("vault-configurator") || "{}") as Partial<PlannerState>;
+  expect(saved.stack?.layers.map((layer) => [layer.layout, layer.height])).toEqual([["L", 2], ["SS", 2], ["L", 4]]);
+});
+
 test("a test-plate group removed from the stack no longer enables export", async () => {
   const user = userEvent.setup();
   const layer = {

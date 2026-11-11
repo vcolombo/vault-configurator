@@ -292,15 +292,27 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             if (!prev) return prev;
             const applied = applyBomResult(prev, requestSig, next);
             // BOM adoption is the only non-user layer writer: when it rewrites
-            // a pending capture's baseline layers (normalization), advance the
-            // baseline to what was written, so restore can tell normalization
-            // apart from user edits. Deferred out of the updater.
+            // a pending capture's baseline rows (normalization), advance those
+            // rows to what was written, so restore can tell normalization apart
+            // from user edits. Per-row on purpose: editing one survivor during
+            // the compute window must not forfeit an untouched survivor's
+            // revert. A spliced list advances nothing. Deferred out of the
+            // updater.
             const capture = removedLayerRef.current;
             if (capture
-              && JSON.stringify(prev.stack.layers) === JSON.stringify(capture.baseline)
-              && JSON.stringify(applied.stack.layers) !== JSON.stringify(prev.stack.layers)) {
-              const baseline = applied.stack.layers;
-              queueMicrotask(() => setRemovedLayer((current) => (current === capture ? { ...capture, baseline } : current)));
+              && capture.baseline.length === prev.stack.layers.length
+              && applied.stack.layers.length === prev.stack.layers.length) {
+              let baseline: Layer[] | null = null;
+              capture.baseline.forEach((row, pos) => {
+                if (JSON.stringify(prev.stack.layers[pos]) === JSON.stringify(row)
+                  && JSON.stringify(applied.stack.layers[pos]) !== JSON.stringify(row)) {
+                  (baseline ??= [...capture.baseline])[pos] = applied.stack.layers[pos];
+                }
+              });
+              if (baseline) {
+                const nextBaseline = baseline;
+                queueMicrotask(() => setRemovedLayer((current) => (current === capture ? { ...capture, baseline: nextBaseline } : current)));
+              }
             }
             return applied;
           });
