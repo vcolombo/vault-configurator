@@ -22,6 +22,19 @@ import type { Bom, ExportFile, Layer, Meta, Plan, PlannerState, PresetMap, Print
 
 const COMPUTE_MS = import.meta.env.MODE === "test" ? 0 : 350;
 
+type RemovedLayerCapture = {
+  layer: Layer;
+  index: number;
+  overrides: PlannerState["overrides"];
+  assemble: NonNullable<PlannerState["progress"]["assemble"]>;
+  survivors: Layer[];
+  baseline: Layer[];
+  survivorOverrides: PlannerState["overrides"];
+  survivorAssemble: NonNullable<PlannerState["progress"]["assemble"]>;
+  /** False once survivors are reordered: positions no longer identify them. */
+  positionsHold: boolean;
+};
+
 type Store = {
   ready: boolean;
   bootError: string;
@@ -45,9 +58,10 @@ type Store = {
   setSettingsSection: (section: SettingsSection) => void;
   removedPrinter: { printer: Printer; index: number; mode?: string; fitTarget?: string } | null;
   setRemovedPrinter: (removed: Store["removedPrinter"]) => void;
-  removedLayer: { layer: Layer; index: number; overrides: PlannerState["overrides"]; assemble: NonNullable<PlannerState["progress"]["assemble"]>; survivors: Layer[]; baseline: Layer[]; survivorOverrides: PlannerState["overrides"]; survivorAssemble: NonNullable<PlannerState["progress"]["assemble"]> } | null;
+  removedLayer: RemovedLayerCapture | null;
   setRemovedLayer: (removed: Store["removedLayer"]) => void;
   restoreLayer: () => void;
+  resetChecklist: () => void;
   startOver: () => void;
   archive: { done: number; total: number; msg?: string };
   status: string;
@@ -300,6 +314,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             // updater.
             const capture = removedLayerRef.current;
             if (capture
+              && capture.positionsHold
               && capture.baseline.length === prev.stack.layers.length
               && applied.stack.layers.length === prev.stack.layers.length) {
               let baseline: Layer[] | null = null;
@@ -465,6 +480,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           baseline: current.stack.layers.filter((_, i) => i !== index),
           survivorOverrides: remapLayerKeys(current.overrides, (i) => (i === index ? [] : [i]), false),
           survivorAssemble: remapLayerKeys(current.progress.assemble || {}, (i) => (i === index ? [] : [i]), false),
+          positionsHold: true,
         }));
         setExpandedLayer((open) => (open === index ? null : open !== null && open > index ? open - 1 : open));
         patch((draft) => {
@@ -501,13 +517,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           draft.stack.layers.splice(insertAt, 0, structuredClone(restore.layer));
           // Revert BOM normalization where a survivor still deep-equals its
           // baseline (the last BOM-adopted form): any user edit breaks that
-          // equality and the row is left alone. A spliced list (add/remove/
-          // duplicate since, or a reorder — moveLayer empties the baseline)
-          // skips field reverts entirely: positions no longer identify
+          // equality and the row is left alone. Skipped entirely when the
+          // list was spliced (add/remove/duplicate changed its length) or
+          // reordered (positionsHold off): positions no longer identify
           // survivors. Reverted rows also get
           // back the tagged entries reconciliation dropped when normalization
           // renamed their group, without overwriting anything present now.
-          if (!spliced) {
+          if (!spliced && restore.positionsHold) {
             restore.survivors.forEach((captured, pos) => {
               const at = draft.stack.layers[pos >= insertAt ? pos + 1 : pos];
               if (!at || JSON.stringify(at) !== JSON.stringify(restore.baseline[pos])) return;
@@ -525,6 +541,17 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
             });
           }
         });
+      },
+      // An explicit checklist reset outranks a pending layer Undo: the
+      // capture's checks (the removed layer's and the survivors') are
+      // invalidated here so restoreLayer cannot resurrect them. The layer
+      // and survivor geometry recovery are unaffected.
+      resetChecklist: () => {
+        patch((draft) => {
+          draft.progress.hardware = {};
+          draft.progress.assemble = {};
+        });
+        setRemovedLayer((current) => (current ? { ...current, assemble: {}, survivorAssemble: {} } : current));
       },
       startOver: () => replaceStack(applyStartOver),
       duplicateLayer: (index) => {
@@ -545,13 +572,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       moveLayer: (index, delta) => {
         const layers = stateRef.current?.stack.layers;
         const target = index + delta;
-        if (!layers || target < 0 || target >= layers.length) return;
-        // A reorder breaks the positional identity the pending Undo's
+        if (!layers || target === index || target < 0 || target >= layers.length) return;
+        // A real reorder breaks the positional identity the pending Undo's
         // survivor recovery relies on — after a swap, equal-valued layers
         // are interchangeable and position cannot tell them apart. Keep the
-        // layer restore; drop the survivor field/key recovery (an empty
-        // baseline makes restoreLayer treat the list as spliced).
-        if (removedLayer) setRemovedLayer({ ...removedLayer, survivors: [], baseline: [] });
+        // layer restore; turn survivor field/key recovery off. A drop on
+        // the same card (delta 0) returns above and changes nothing.
+        setRemovedLayer((current) => (current ? { ...current, positionsHold: false } : current));
         patch((draft) => {
           const movedTarget = index + delta;
           if (movedTarget < 0 || movedTarget >= draft.stack.layers.length) return;
