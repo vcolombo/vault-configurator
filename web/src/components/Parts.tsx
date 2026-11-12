@@ -26,11 +26,14 @@ export function Parts() {
       tooBig ? `${tooBig} ${tooBig === 1 ? "part does" : "parts do"} not fit ${who}` : "",
     ].filter(Boolean).join(" · ") + "."
     : "No parts yet. You can continue, but Plates has nothing to pack until the stack has a layer.";
-  const rows = visiblePartRows(rowsOf(parts, state.merge));
-  const exceptions = rows.filter((part) => partFitsScope(part, ids) !== "fits").length;
-  const fitSummary = !rows.length ? ""
-    : exceptions ? `${exceptions} ${exceptions === 1 ? "part needs" : "parts need"} a look. They are marked in the fit column.`
-    : `All parts fit ${who}.`;
+  // One fit per rendered row owns the cell class, the cell content and the banner.
+  // Only a missing file or a part that does not fit is a problem; "unknown" is not
+  // claimed as fitting, nor counted against the build (as in the footer).
+  const rows = visiblePartRows(rowsOf(parts, state.merge)).map((part) => ({ part, fit: partFitsScope(part, ids) }));
+  const problemRows = rows.filter(({ fit }) => fit === "missing" || fit === "unfit").length;
+  const fitSummary = problemRows
+    ? `${problemRows} ${problemRows === 1 ? "row needs" : "rows need"} a look, marked in the fit column.`
+    : rows.length && rows.every(({ fit }) => fit === "fits") ? `All parts fit ${who}.` : "";
   return (
     <div className="page page-parts">
       <h1>Parts & colours</h1>
@@ -121,15 +124,14 @@ export function Parts() {
             Join identical parts
           </label>
         </div>
-        {fitSummary ? <p className={exceptions ? "warn" : "note"}>{fitSummary}</p> : null}
+        {fitSummary ? <p className={problemRows ? "warn" : "note"}>{fitSummary}</p> : null}
         <div className="table-wrap">
           <table>
             <thead>
               <tr><th>Part</th><th>Qty</th><th>Colour</th><th>g</th><th>time</th><th>size mm</th><th>fits</th></tr>
             </thead>
             <tbody>
-              {rows.map((part) => {
-                const fit = partFitsScope(part, ids);
+              {rows.map(({ part, fit }) => {
                 return (
                   <tr key={`${part.group}|${part.name}`}>
                     <td>{part.name}<div className="note">{part.group}</div></td>
@@ -137,7 +139,6 @@ export function Parts() {
                     <td>
                       <span className="role-pick">
                         <span className="mini-swatch" aria-hidden="true" style={{ background: roleColor(state.settings, part.role) }} />
-                        <span>{ROLE_SHORT[part.role] || part.role}</span>
                         <select
                           aria-label={`Colour for ${part.name}`}
                           value={part.role}

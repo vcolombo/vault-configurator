@@ -528,13 +528,21 @@ test("Parts marks only the exceptions in the fit column and states the rest once
 
   const misfit = { ...everyFits, u1: false };
   stubBom([parts[0], { ...parts[1], fits: misfit }], []);
-  render(<App />);
-  expect(await screen.findByText("1 part needs a look. They are marked in the fit column.")).toBeInTheDocument();
+  const second = render(<App />);
+  expect(await screen.findByText("1 row needs a look, marked in the fit column.")).toBeInTheDocument();
   expect(screen.getAllByRole("img", { name: "fits every enabled printer" })).toHaveLength(1);
   expect(screen.getByText("does not fit every enabled printer")).toBeInTheDocument();
   // The colour pick is still a real select, reachable by its name; the choice lands in the saved overrides.
   await user.selectOptions(screen.getByLabelText("Colour for Latch"), "accent");
   expect(JSON.parse(localStorage.getItem("vault-configurator") || "{}").overrides["L1 Drawer|Latch"]).toEqual({ role: "accent" });
+  second.unmount();
+
+  // A part with no fit data is neither a problem nor claimed as fitting: no warning, no "All parts fit".
+  stubBom([parts[0], { ...parts[1], fits: undefined }], []);
+  render(<App />);
+  expect(await screen.findByText("fit not checked")).toBeInTheDocument();
+  expect(screen.queryByText(/need a look/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/All parts fit/)).not.toBeInTheDocument();
 });
 
 test("Assembly complete appears only once every hardware and assembly line is checked", async () => {
