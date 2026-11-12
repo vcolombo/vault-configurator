@@ -1,5 +1,5 @@
 import { checkedCount, exportCandidates, missingFileLines, plateKey, printerLabel } from "../../../planner.mjs";
-import { fmtH } from "../labels";
+import { EXPORT_STATE_VIEW, fmtH } from "../labels";
 import { exportPrinters, estimatePrinter, usePlanner } from "../store";
 import type { Filament, Plate } from "../types";
 import { Icon, NumberField, StepFooter } from "./ui";
@@ -20,13 +20,13 @@ export function Plates() {
   const missingPieces = missingLines.reduce((sum, part) => sum + Number(part.qty || 0), 0);
   const canExport = !emptyStack && partLines.length > 0 && !missingLines.length && packing.length > 0;
   const exported = store.exportFiles.length;
-  const exportLine = {
-    none: "nothing exported yet",
-    current: `${exported} ${exported === 1 ? "file" : "files"} exported`,
-    stale: "exported files are for an earlier build",
-    test: "test plates exported",
-    "test-stale": "test plates exported for an earlier selection",
-  }[store.exportState];
+  const exportView = EXPORT_STATE_VIEW[store.exportState];
+  const exportLine = exportView.line(exported);
+  const exportTotals = store.exportFiles.reduce<{ plates?: number; items?: number }>((acc, file) => {
+    if (file.plates != null) acc.plates = (acc.plates || 0) + file.plates;
+    if (file.items != null) acc.items = (acc.items || 0) + file.items;
+    return acc;
+  }, {});
   const planSummary = plan
     ? plan.synthetic
       ? `${plan.plates.length} example ${plan.plates.length === 1 ? "plate" : "plates"} shown`
@@ -82,16 +82,11 @@ export function Plates() {
         ) : null}
         {store.exportFiles.length ? (
           <div className="export-result" role="status">
-            <p className={store.exportState === "current" ? "ok" : "warn"}>
-              <strong>{
-                store.exportState === "current" ? "Exported — matches your current stack."
-                : store.exportState === "stale" ? "Stack changed since this export — export again before printing."
-                : store.exportState === "test" ? "Test plates exported — not your stack export."
-                : "Test plates exported for an earlier selection."
-              }</strong>{" "}
-              {store.exportFiles.length} {store.exportFiles.length === 1 ? "file" : "files"}
-              {store.exportFiles.some((file) => file.plates != null) ? ` · ${store.exportFiles.reduce((sum, file) => sum + (file.plates || 0), 0)} plates` : ""}
-              {store.exportFiles.some((file) => file.items != null) ? ` · ${store.exportFiles.reduce((sum, file) => sum + (file.items || 0), 0)} parts` : ""}
+            <p className={exportView.tone}>
+              <strong>{exportView.headline}</strong>{" "}
+              {exported} {exported === 1 ? "file" : "files"}
+              {exportTotals.plates != null ? ` · ${exportTotals.plates} plates` : ""}
+              {exportTotals.items != null ? ` · ${exportTotals.items} parts` : ""}
             </p>
             {store.exportFiles.map((file) => {
               const base = file.file.split(/[/\\]/).pop() || file.file;
