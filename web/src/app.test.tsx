@@ -501,6 +501,42 @@ test("each step ends with a readiness line and a next action that never blocks, 
   expect(await screen.findByRole("heading", { name: "Assemble" })).toBeInTheDocument();
 });
 
+test("Parts marks only the exceptions in the fit column and states the rest once", async () => {
+  const user = userEvent.setup();
+  const layer = {
+    type: "Drawers", layout: "S", height: 2, facades: [[2]], interior: "none", key: "key",
+    labels: true, rails: false, manualSupports: false, variant: "Flat", baseplate: false,
+    gridW: 1, gridD: 1, divW: 1, divD: 2,
+  };
+  localStorage.setItem("vault-configurator", JSON.stringify({
+    tab: "parts",
+    stack: { name: "my-vault", depth: 5, layers: [layer], roof: { type: "none", topHandle: true }, mods: { backbone: "none", pegboard: "none" } },
+    settings: meta.defaults,
+  }));
+  const everyFits = { u1: true, p1s: true, "h2d-left": true };
+  const parts = [
+    { group: "L1 Drawer", name: "Box", qty: 1, role: "box", file: "box.stl", size: [100, 100, 40], fits: everyFits },
+    { group: "L1 Drawer", name: "Latch", qty: 1, role: "knob", file: "latch.stl", size: [10, 10, 10], fits: everyFits },
+  ];
+  stubBom(parts, []);
+  const { unmount } = render(<App />);
+  expect(await screen.findByText("All parts fit every enabled printer.")).toBeInTheDocument();
+  // A quiet mark per row, not a sentence per row.
+  expect(screen.getAllByRole("img", { name: "fits every enabled printer" })).toHaveLength(2);
+  expect(screen.queryByText("does not fit every enabled printer")).not.toBeInTheDocument();
+  unmount();
+
+  const misfit = { ...everyFits, u1: false };
+  stubBom([parts[0], { ...parts[1], fits: misfit }], []);
+  render(<App />);
+  expect(await screen.findByText("1 part needs a look. They are marked in the fit column.")).toBeInTheDocument();
+  expect(screen.getAllByRole("img", { name: "fits every enabled printer" })).toHaveLength(1);
+  expect(screen.getByText("does not fit every enabled printer")).toBeInTheDocument();
+  // The colour pick is still a real select, reachable by its name; the choice lands in the saved overrides.
+  await user.selectOptions(screen.getByLabelText("Colour for Latch"), "accent");
+  expect(JSON.parse(localStorage.getItem("vault-configurator") || "{}").overrides["L1 Drawer|Latch"]).toEqual({ role: "accent" });
+});
+
 test("Assembly complete appears only once every hardware and assembly line is checked", async () => {
   const user = userEvent.setup();
   const layer = {

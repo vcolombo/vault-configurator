@@ -46,6 +46,50 @@
     border-radius: var(--radius-sm);
   }
 
+  /* The colour cell reads as a swatch and a role name; the native select sits
+     invisibly over it, so the click, the keyboard and the screen reader are
+     still the real control. The row stays one line instead of a boxed field. */
+  .role-pick {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-block-size: 1.75rem;
+    padding-inline: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .role-pick::after {
+    content: "▾";
+    color: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+
+  .role-pick:hover {
+    background: var(--accent);
+  }
+
+  .role-pick:focus-within {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .role-pick select {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    min-block-size: 0;
+    padding: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* Part group overrides belong with the role rows they override. */
+  .group-colour {
+    padding-block-start: 0.75rem;
+  }
+
   .pieces {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
