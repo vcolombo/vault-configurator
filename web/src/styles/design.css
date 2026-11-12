@@ -316,7 +316,7 @@
        the cap) through variables, so both together shrink the drawing more
        than either alone instead of one rule winning by source order. */
     block-size: 480px;
-    block-size: min(var(--cabinet-cap, 480px), max(100px, calc(100dvh - var(--head-h, 7rem) - 26rem - var(--disclosure-reserve, 0rem) - var(--help-reserve, 0rem))));
+    block-size: min(var(--cabinet-cap, 480px), max(var(--cabinet-floor, 140px), calc(100dvh - var(--head-h, 7rem) - 26rem - var(--disclosure-reserve, 0rem) - var(--help-reserve, 0rem))));
     inline-size: auto;
     max-inline-size: 100%;
     color: var(--preview-frame);
@@ -354,6 +354,7 @@
     .preview-card:has(details[open]) {
       --disclosure-reserve: 5rem;
       --cabinet-cap: 300px;
+      --cabinet-floor: 90px;
     }
 
     /* While a help topic is active Help has first claim on what remains:
@@ -362,6 +363,7 @@
     .col.side[data-help="on"] .preview-card {
       --help-reserve: 14rem;
       --cabinet-cap: 200px;
+      --cabinet-floor: 100px;
     }
 
     .col.side[data-help="on"] #help {
