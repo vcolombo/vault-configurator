@@ -105,7 +105,7 @@ export function Header() {
 }
 
 export function Tabs() {
-  const { state, setTab } = usePlanner();
+  const { state, setTab, exportState } = usePlanner();
   return (
     <nav className="tabs" aria-label="Steps">
       {TABS.map((tab, index) => (
@@ -117,8 +117,10 @@ export function Tabs() {
           aria-selected={state.tab === tab.id}
           aria-label={`${index + 1} ${tab.label}`}
           onClick={() => setTab(tab.id)}
+          title={tab.id === "plates" && (exportState === "stale" || exportState === "test-stale") ? "Exported files are for an earlier build" : undefined}
         >
           <span className="tab-num" aria-hidden="true">{index + 1}</span>{tab.label}
+          {tab.id === "plates" && (exportState === "stale" || exportState === "test-stale") ? <span className="tab-dot" aria-hidden="true" /> : null}
         </button>
       ))}
     </nav>

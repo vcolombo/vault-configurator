@@ -353,6 +353,18 @@
       block-size: min(300px, max(90px, calc(100dvh - var(--head-h, 7rem) - 31rem)));
     }
 
+    /* While a help topic is active Help has first claim on the column: the
+       drawing steps down (like it does for the open disclosure, further)
+       and Help flexes to whatever height remains, so the manual page the
+       user asked for is not clipped to a slit under the Preview. */
+    .col.side[data-help="on"] .cabinet {
+      block-size: min(200px, max(100px, calc(100dvh - var(--head-h, 7rem) - 40rem)));
+    }
+
+    .col.side[data-help="on"] #help {
+      flex: 1 1 auto;
+    }
+
     #help {
       /* Shrinks + scrolls internally with whatever height the budgets above
          leave (a non-zero min-block-size floors at content height instead). */

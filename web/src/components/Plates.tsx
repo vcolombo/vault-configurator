@@ -80,16 +80,31 @@ export function Plates() {
         {partLines.length && plan && !plan.plates.length && !plan.synthetic && !missingLines.length ? (
           <p className="warn">No plates could be planned{unplaceable ? `: ${unplaceable} ${unplaceable === 1 ? "part does" : "parts do"} not fit any export printer (see below)` : ""}.</p>
         ) : null}
-        {store.exportFiles.map((file) => {
-          const base = file.file.split(/[/\\]/).pop() || file.file;
-          return (
-            <p key={base} className={file.warning ? "warn" : "ok"}>
-              {base} · {file.plates} plates · {file.items} parts {file.warning ? `· ${file.warning}` : ""}
-              {" "}
-              <a href={`/api/download_file?name=${encodeURIComponent(base)}`} download={base}>Download</a>
+        {store.exportFiles.length ? (
+          <div className="export-result" role="status">
+            <p className={store.exportState === "current" ? "ok" : "warn"}>
+              <strong>{
+                store.exportState === "current" ? "Exported — matches your current stack."
+                : store.exportState === "stale" ? "Stack changed since this export — export again before printing."
+                : store.exportState === "test" ? "Test plates exported — not your stack export."
+                : "Test plates exported for an earlier selection."
+              }</strong>{" "}
+              {store.exportFiles.length} {store.exportFiles.length === 1 ? "file" : "files"}
+              {store.exportFiles.some((file) => file.plates != null) ? ` · ${store.exportFiles.reduce((sum, file) => sum + (file.plates || 0), 0)} plates` : ""}
+              {store.exportFiles.some((file) => file.items != null) ? ` · ${store.exportFiles.reduce((sum, file) => sum + (file.items || 0), 0)} parts` : ""}
             </p>
-          );
-        })}
+            {store.exportFiles.map((file) => {
+              const base = file.file.split(/[/\\]/).pop() || file.file;
+              return (
+                <p key={base} className={file.warning ? "warn" : "ok"}>
+                  {base} · {file.plates} plates · {file.items} parts {file.warning ? `· ${file.warning}` : ""}
+                  {" "}
+                  <a href={`/api/download_file?name=${encodeURIComponent(base)}`} download={base}>Download</a>
+                </p>
+              );
+            })}
+          </div>
+        ) : null}
         <p className="note">{meta.handoffNote}</p>
       </section>
       <section className="card spaced">
